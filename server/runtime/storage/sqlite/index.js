@@ -227,9 +227,8 @@ function DaqNode(_settings, _log, _id) {
                             if (daqNextToken && daqNextToken < lastts) {
                                 // close data DB, open and bind the new db, rename and move the closed db 
                                 db_daqdata.close(function () {
-                                    var suffix = _getDateTimeSuffix(new Date());
                                     var oldfile = db_daqdata_file;
-                                    db_daqdata_file = path.join(settings.dbDir, db_daqdata_prefix + id + '_' + suffix + '.db');
+                                    db_daqdata_file = path.join(settings.dbDir, db_daqdata_prefix + id + '_' + _getDateTimeSuffix(new Date()) + '.db');
                                     db_daqdata = null;
                                     _bindDaqData(db_daqdata_file).then(result => {
                                         logger.info(`daqstorage.add-daq-values '${db_daqmap_file}' database`, true);
@@ -251,19 +250,24 @@ function DaqNode(_settings, _log, _id) {
                             } else {
                                 logger.error(`daqstorage.add-daq-values addDaqfnc failed! '${id}' ${reason}`);
                             }
+                            db_daqdata.close();
+                            db_daqdata = null;
                             _checkDataWorking(false);
                         });
                     }
                 }
             } else {
-                // some things was wrong by tokenize...try to bind the db_daqdata 
+                // some things was wrong by tokenize...try to bind the db_daqdata
+                var oldfile = db_daqdata_file;
+                db_daqdata_file = path.join(settings.dbDir, db_daqdata_prefix + id + '_' + _getDateTimeSuffix(new Date()) + '.db');
                 _bindDaqData(db_daqdata_file).then(result => {
-                    logger.info(`daqstorage.add-daq-values '${db_daqmap_file}' database`, true);
+                    logger.info(`daqstorage.add-daq-values '${db_daqmap_file}' database on restore`, true);
                     db_daqdata = result;
+                    _archiveDBfile(oldfile, new Date().getTime());
                     _checkDataWorking(false);
                 }).catch(function (err) {
                     _checkDataWorking(false);
-                    logger.error(`daqstorage.add-daq-values _bindDaqData failed! '${id}' ${err}`);
+                    logger.error(`daqstorage.add-daq-values _bindDaqData on restore failed! '${id}' ${err}`);
                 });
             }
         }

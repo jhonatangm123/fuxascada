@@ -26,6 +26,8 @@ import { ProjectService } from '../_services/project.service';
 import { NgxTouchKeyboardDirective } from '../framework/ngx-touch-keyboard/ngx-touch-keyboard.directive';
 import { HmiService } from '../_services/hmi.service';
 import { HtmlSelectComponent } from '../gauges/controls/html-select/html-select.component';
+import { FuxaViewDialogComponent, FuxaViewDialogData } from './fuxa-view-dialog/fuxa-view-dialog.component';
+import { MatDialog } from '@angular/material/dialog';
 
 declare var SVG: any;
 
@@ -76,7 +78,8 @@ export class FuxaViewComponent implements OnInit, AfterViewInit, OnDestroy {
         private scriptService: ScriptService,
         private projectService: ProjectService,
         private hmiService: HmiService,
-        private resolver: ComponentFactoryResolver) {
+        private resolver: ComponentFactoryResolver,
+        private fuxaDialog: MatDialog) {
     }
 
     ngOnInit() {
@@ -153,7 +156,10 @@ export class FuxaViewComponent implements OnInit, AfterViewInit, OnDestroy {
      * load the svg content to show in browser, clear all binded to this view
      * @param view
      */
-    public loadHmi(view: View) {
+    public loadHmi(view: View, legacyProfile?: boolean) {
+        if (!this.hmi) {
+            this.hmi = this.projectService.getHmi();
+        }
         if (this.id) {
             try {
                 this.gaugesManager.unbindGauge(this.id);
@@ -173,7 +179,7 @@ export class FuxaViewComponent implements OnInit, AfterViewInit, OnDestroy {
             } else {
                 this.dataContainer.nativeElement.innerHTML = view.svgcontent.replace('<title>Layer 1</title>', '');
             }
-            if (view.profile.bkcolor && this.child) {
+            if (view.profile.bkcolor && (this.child || legacyProfile)) {
                 this.dataContainer.nativeElement.style.backgroundColor = view.profile.bkcolor;
             }
         }
@@ -529,7 +535,9 @@ export class FuxaViewComponent implements OnInit, AfterViewInit, OnDestroy {
                     let svgeles = FuxaViewComponent.getSvgElements(htmlevent.ga.id);
 
                     if (variables.length && svgeles.length) {
-                        self.gaugesManager.processValue(htmlevent.ga, svgeles[0], variables[0], new GaugeStatus());
+                        if (htmlevent.ga?.type !== HtmlInputComponent.TypeTag && !HtmlInputComponent.InputDateTimeType.includes(htmlevent.ga?.property.options?.type)) {
+                            self.gaugesManager.processValue(htmlevent.ga, svgeles[0], variables[0], new GaugeStatus());
+                        }
                     }
                     // Remove any error message when input is blured
                     htmlevent.dom.setCustomValidity('');
@@ -621,20 +629,20 @@ export class FuxaViewComponent implements OnInit, AfterViewInit, OnDestroy {
     }
 
     openDialog(event, viewref: string, options: any = {}) {
-        let view: View = this.getView(viewref);
-        if (!view) {
-            return;
-        }
-        this.dialog = new DialogModalModel(viewref);
-        this.dialog.width = view.profile.width;
-        this.dialog.height = view.profile.height + 26;
-        this.dialog.view = view;
-        this.dialog.bkcolor = 'trasparent';
-        this.dialog.variablesMapping = options.variablesMapping;
-        if (view.profile.bkcolor) {
-            this.dialog.bkcolor = view.profile.bkcolor;
-        }
-        this.dialog.disableDefaultClose = options.hideClose;
+        let dialogData = <FuxaViewDialogData>{
+            view: this.getView(viewref),
+            bkColor: 'trasparent',
+            variablesMapping: options.variablesMapping,
+            disableDefaultClose: options.hideClose,
+            gaugesManager: this.gaugesManager
+        };
+        let dialogRef = this.fuxaDialog.open(FuxaViewDialogComponent, {
+            panelClass: 'fuxa-dialog-property',
+            disableClose: true,
+            data: dialogData,
+            position: { top: '60px' }
+        });
+        dialogRef.afterClosed().subscribe();
     }
 
     onOpenCard(id: string, event, viewref: string, options: any = {}) {

@@ -26,7 +26,8 @@
             "styles": [
               "src/styles.css",
               "src/theme.scss",
-              "node_modules/uplot/dist/uPlot.min.css"
+              "node_modules/uplot/dist/uPlot.min.css",
+              "node_modules/ngx-toastr/toastr.css"
             ],
             "scripts": [
               "node_modules/uplot/dist/uPlot.iife.min.js",
@@ -44,13 +45,19 @@
               "chartjs-plugin-datalabels",
               "codemirror/addon/lint/lint",
               "codemirror/mode/javascript/javascript",
+              "codemirror/mode/css/css",
               "codemirror/mode/markdown/markdown",
               "file-saver",
               "moment",
               "panzoom",
               "pdfmake/build/pdfmake",
               "pdfmake/build/vfs_fonts",
-              "socket.io-client"
+              "socket.io-client",
+                "eventemitter3",
+                "delegate",
+                "flv.js",
+                "danmu.js",
+                "downloadjs"
             ]
           },
           "configurations": {
@@ -187,5 +194,8 @@
         }
       }
     }
+  },
+  "cli": {
+    "analytics": "c2fa2ede-d40c-46d1-ba21-d1fa7d9ff4bf"
   }
 }

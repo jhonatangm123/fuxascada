@@ -3,9 +3,11 @@ import { Observable } from 'rxjs';
 
 import { Device } from '../../_models/device';
 import { ProjectData, ProjectDataCmdType, UploadFile } from '../../_models/project';
-import { AlarmQuery } from '../../_models/alarm';
+import { AlarmBaseType, AlarmQuery, AlarmsFilter } from '../../_models/alarm';
 import { DaqQuery } from '../../_models/hmi';
 import { CommanType } from '../command.service';
+import { Report, ReportFile, ReportsQuery } from '../../_models/report';
+import { Role } from '../../_models/user';
 
 @Injectable()
 export abstract class ResourceStorageService {
@@ -30,9 +32,9 @@ export abstract class ResourceStorageService {
 
     public abstract setDeviceSecurity(id: string, value: string): Observable<any>;
 
-    public abstract getAlarmsValues(): Observable<any>;
+    public abstract getAlarmsValues(alarmFilter?: AlarmsFilter): Observable<AlarmBaseType[]>;
 
-    public abstract getAlarmsHistory(query: AlarmQuery): Observable<any>;
+    public abstract getAlarmsHistory(query: AlarmQuery): Observable<AlarmBaseType[]>;
 
     public abstract setAlarmAck(name: string): Observable<any>;
 
@@ -45,6 +47,26 @@ export abstract class ResourceStorageService {
     public abstract heartbeat(activity: boolean): Observable<any>;
 
     public abstract downloadFile(fileName: string, type: CommanType): Observable<Blob>;
+
+    public abstract getRoles(): Observable<Role[]>;
+
+    public abstract setRoles(roles: Role[]): Observable<any>;
+
+    public abstract removeRoles(roles: Role[]): Observable<any>;
+
+    public abstract endPointConfig: string;
+
+    public abstract getTagsValues(query: string[]): Observable<any>;
+
+    public abstract runSysFunction(functionName: string, params?: any): Observable<any>;
+
+    public abstract getReportsDir(report: Report): Observable<string[]>;
+
+    public abstract getReportsQuery(query: ReportsQuery): Observable<ReportFile[]>;
+
+    public abstract removeReportFile(fileName: string): Observable<void>;
+
+    public abstract buildReport(report: Report): Observable<void>;
 
     public static defileProject(source: ProjectData): ProjectData {
         if (!source) {return source;}

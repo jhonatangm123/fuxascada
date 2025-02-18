@@ -8,7 +8,8 @@ const deviceUtils = require('../device-utils');
 const path = require('path');
 const fs = require('fs');
 
-function MQTTclient(_data, _logger, _events) {
+function MQTTclient(_data, _logger, _events, _runtime) {
+    var runtime = _runtime;
     var data = _data;                   // Current data
     var logger = _logger;               // Logger var working = false;
     var working = false;                // Working flag to manage overloading polling and connection
@@ -25,7 +26,7 @@ function MQTTclient(_data, _logger, _events) {
     var topicsMap = {};                 // Map the topic subscribed, to check by on.message
     var memoryTagToPublish = new Map(); // Map tag to publish, content in topics as 'tag'
     var refTagToTopics = {};            // Map of Tag to Topic (with ref to other device tag)
-    
+
     const certificatesDir = _data.certificatesDir;
 
     /**
@@ -60,7 +61,7 @@ function MQTTclient(_data, _logger, _events) {
                                 }
                                 if (property.caCert) {
                                     options.ca = fs.readFileSync(path.join(certificatesDir, property.caCert));
-                                }                                
+                                }
                             }
                         }
                         client = mqtt.connect(options.url, options);
@@ -146,11 +147,11 @@ function MQTTclient(_data, _logger, _events) {
      * Take the current Topics value (only changed), emit Topics value
      * Save DAQ value
      */
-    this.polling = function () {
+    this.polling = async function () {
         if (_checkWorking(true)) {
             if (client) {
                 try {
-                    var varsValueChanged = _checkVarsChanged();
+                    var varsValueChanged = await _checkVarsChanged();
                     lastTimestampValue = new Date().getTime();
                     _emitValues(varsValue);
 
@@ -229,11 +230,11 @@ function MQTTclient(_data, _logger, _events) {
 
     /**
      * Return the timestamp of last read tag operation on polling
-     * @returns 
+     * @returns
      */
      this.lastReadTimestamp = () => {
         return lastTimestampValue;
-    }    
+    }
 
     /**
      * Set function to ask property (security)
@@ -256,7 +257,7 @@ function MQTTclient(_data, _logger, _events) {
                 if (data.tags[key].options && data.tags[key].options.pubs) {
                     data.tags[key].options.pubs.forEach(item => {
                         if (item.type === 'tag' && item.value) {
-                            // topic with json data with value from other device tags 
+                            // topic with json data with value from other device tags
                             if (!memoryTagToPublish.has(item.value)) {
                                 memoryTagToPublish.set(item.value, null);
                                 events.emit('tag-change:subscription', item.value);
@@ -298,23 +299,23 @@ function MQTTclient(_data, _logger, _events) {
     /**
      * Set the Topic value, publish to broker (coming from frontend)
      */
-    this.setValue = function (tagId, value) {
+    this.setValue = async function (tagId, value) {
         if (client && client.connected) {
             var tag = data.tags[tagId];
             if (tag) {
                 if (tag.options) {
                     if (tag.options.pubs) {
-                        tag.options.pubs.forEach(item => {
+                        for (const item of tag.options.pubs) {
                             if (item.type === 'value') {
-                                item.value = deviceUtils.tagRawCalculator(value, tag);
+                                item.value = await deviceUtils.tagRawCalculator(value, tag, runtime);
                             }
-                        })
+                        }
                     } else if (tag.options.subs && tag.options.subs.indexOf(tag.memaddress) !== -1) {
-                        tag.value = deviceUtils.tagRawCalculator(value, tag);
+                        tag.value = await deviceUtils.tagRawCalculator(value, tag, runtime);
                     }
                 }
                 if (tag.type === 'raw') {
-                    tag['value'] = deviceUtils.tagRawCalculator(value, tag);
+                    tag['value'] = await deviceUtils.tagRawCalculator(value, tag, runtime);
                 }
                 tag.changed = true;
                 _publishValues([tag]);
@@ -340,6 +341,24 @@ function MQTTclient(_data, _logger, _events) {
             return { id: topic, name: data.tags[topic].name, type: data.tags[topic].type, format: data.tags[topic].format };
         } else {
             return null;
+        }
+    }
+
+    /**
+     * Return the Daq settings of Tag
+     * @returns
+     */
+    this.getTagDaqSettings = (tagId) => {
+        return data.tags[tagId] ? data.tags[tagId].daq : null;
+    }
+
+    /**
+     * Set Daq settings of Tag
+     * @returns
+     */
+    this.setTagDaqSettings = (tagId, settings) => {
+        if (data.tags[tagId]) {
+            utils.mergeObjectsValues(data.tags[tagId].daq, settings);
         }
     }
 
@@ -414,7 +433,7 @@ function MQTTclient(_data, _logger, _events) {
     }
     /**
      * Map the topics to address (path)
-     * @param {*} topics 
+     * @param {*} topics
      */
     var _mapTopicsAddress = function (topics) {
         var tmap = {};
@@ -440,14 +459,14 @@ function MQTTclient(_data, _logger, _events) {
 
 
     /**
-     * Return the Topics to publish that have value changed and clear value changed flag of all Topics 
+     * Return the Topics to publish that have value changed and clear value changed flag of all Topics
      */
-     var _checkVarsChanged = () => {
+     var _checkVarsChanged = async () => {
         const timestamp = new Date().getTime();
         var result = {};
         for (var id in data.tags) {
             if (!utils.isNullOrUndefined(data.tags[id].rawValue)) {
-                data.tags[id].value = deviceUtils.tagValueCompose(data.tags[id].rawValue, data.tags[id]);
+                data.tags[id].value = await deviceUtils.tagValueCompose(data.tags[id].rawValue, varsValue[id] ? varsValue[id].value : null, data.tags[id], runtime);
                 if (this.addDaq && deviceUtils.tagDaqToSave(data.tags[id], timestamp)) {
                     result[id] = data.tags[id];
                 }
@@ -460,7 +479,7 @@ function MQTTclient(_data, _logger, _events) {
 
     /**
      * Emit the mqtt client connection status
-     * @param {*} status 
+     * @param {*} status
      */
     var _emitStatus = function (status) {
         lastStatus = status;
@@ -469,7 +488,7 @@ function MQTTclient(_data, _logger, _events) {
 
     /**
      * Emit the mqtt Topics values array { id: <name>, value: <value>, type: <type> }
-     * @param {*} values 
+     * @param {*} values
      */
     var _emitValues = function (values) {
         events.emit('device-value:changed', { id: data.name, values: values });
@@ -477,7 +496,7 @@ function MQTTclient(_data, _logger, _events) {
 
     /**
      * Used to manage the async connection and polling automation (that not overloading)
-     * @param {*} check 
+     * @param {*} check
      */
     var _checkWorking = function (check) {
         if (check && working) {
@@ -516,7 +535,7 @@ function MQTTclient(_data, _logger, _events) {
     /**
      * Publish the tags, called from polling and setValues (input in frontend)
      * to publish are only tags from other devices or topics created in mqtt device (by publish section)
-     * @param {*} tags 
+     * @param {*} tags
      */
     var _publishValues = function (tags) {
         Object.keys(tags).forEach(key => {
@@ -559,7 +578,6 @@ function MQTTclient(_data, _logger, _events) {
                     client.publish(tags[key].address, JSON.stringify(obj), topicOptions);
                 } else if (tags[key].value !== undefined) {   // whitout payload
                     client.publish(tags[key].address, tags[key].value.toString(), topicOptions);
-                    tags[key].value = null;
                 }
             } catch (err) {
                 console.error(err);
@@ -570,7 +588,7 @@ function MQTTclient(_data, _logger, _events) {
 
 /**
  * Return connection option from device property
- * @param {*} property 
+ * @param {*} property
  */
 function getConnectionOptions(property) {
     return {
@@ -594,7 +612,7 @@ module.exports = {
     init: function (settings) {
         // deviceCloseTimeout = settings.deviceCloseTimeout || 15000;
     },
-    create: function (data, logger, events) {
-        return new MQTTclient(data, logger, events);
+    create: function (data, logger, events, runtime) {
+        return new MQTTclient(data, logger, events, runtime);
     }
 }

@@ -7,8 +7,9 @@ var bacnet;
 const utils = require('../../utils');
 const deviceUtils = require('../device-utils');
 
-function BACNETclient(_data, _logger, _events) {
+function BACNETclient(_data, _logger, _events, _runtime) {
 
+    var runtime = _runtime;
     var data = _data;                   // Current Device data { id, name, tags, enabled, ... }
     var logger = _logger;               // Logger
     var working = false;                // Working flag to manage overloading polling and connection
@@ -133,6 +134,21 @@ function BACNETclient(_data, _logger, _events) {
         });
     }
 
+    // Next function wraps the API client.readPropertyMultiple call into a Promise
+    // and handles the callbacks with resolve and reject.
+    // https://stackoverflow.com/questions/5010288/how-to-make-a-function-wait-until-a-callback-has-been-called-using-node-js
+    this.apiFunctionWrapper = function (deviceAddress, requestArray) {
+        return new Promise((resolve, reject) => {
+            client.readPropertyMultiple(deviceAddress, requestArray, async (err, value) => {
+                if (err) {
+                    logger.error(`'${data.name}' readPropertyMultiple error! ${err}`);
+                    reject(err);
+                }
+                resolve(value);
+            });
+        });
+    }
+
     /**
      * Take the current Objects (Tags) value (only changed), Reset the change flag, Emit Tags value
      * Save DAQ value
@@ -142,43 +158,40 @@ function BACNETclient(_data, _logger, _events) {
             for (var deviceId in objectsMapToRead) {
                 try {
                     const deviceAddress = _getDeviceAddress(devices[deviceId]);
-                    await client.readPropertyMultiple(deviceAddress, objectsMapToRead[deviceId], (err, value) => {
-                        if (err) {        
-                            logger.error(`'${data.name}' readPropertyMultiple error! ${err}`);
-                        } else {
-                            if (!(value && value.values && value.values[0] && value.values[0].values)) {
-                                logger.error(`'${data.name}' readPropertyMultiple error! unknow`);
-                            } else if (value.values && value.values.length) {
-                                let result = [];
-                                let errors = [];
-                                value.values.forEach(data => { 
-                                    if (data.objectId && data.values && data.values[0].id === bacnet.enum.PropertyIdentifier.PRESENT_VALUE) {
-                                        let address = _formatId(data.objectId.type, data.objectId.instance);
-                                        if (data.values[0].value && data.values[0].value.type === bacnet.enum.ApplicationTag.ERROR) {
-                                            errors.push({ address: address, value: data.values[0].value.value, type:  data.objectId.type });    
-                                        } else {
-                                            result.push({ 
-                                                address: address,
-                                                rawValue: data.values[0].value[0].value,
-                                                type: data.objectId.type
-                                            });
-                                        }
-                                    }
-                                });
-                                if (result.length) {
-                                    let varsValueChanged = _updateVarsValue(deviceId, result);
-                                    lastTimestampValue = new Date().getTime();
-                                    _emitValues(Object.values(varsValue));
-                                    if (this.addDaq && !utils.isEmptyObject(varsValueChanged)) {
-                                        this.addDaq(varsValueChanged, data.name, data.id);
-                                    }
+                    //wrap the client.readPropertyMultiple in a promise so the callback can be awaited
+                    const value = await this.apiFunctionWrapper(deviceAddress, objectsMapToRead[deviceId]);
+
+                    if (!(value && value.values && value.values[0] && value.values[0].values)) {
+                        logger.error(`'${data.name}' readPropertyMultiple error! unknow`);
+                    } else if (value.values && value.values.length) {
+                        let result = [];
+                        value.values.forEach(bacData => {
+                            if (bacData.objectId && bacData.values && bacData.values[0].id === bacnet.enum.PropertyIdentifier.PRESENT_VALUE) {
+                                let address = _formatId(bacData.objectId.type, bacData.objectId.instance);
+                                if (bacData.values[0].value && bacData.values[0].value.type === bacnet.enum.ApplicationTag.ERROR ||
+                                    bacData.values[0].value.length > 0 && bacData.values[0].value[0].type === bacnet.enum.ApplicationTag.ERROR ) {
+                                        logger.error(`'${data.name}' readPropertyMultiple error! errorClass: ${bacData.values[0].value[0].value.errorClass}, errorCode: ${bacData.values[0].value[0].value.errorCode}`);
+                                } else {
+                                    result.push({
+                                        address: address,
+                                        rawValue: bacData.values[0].value[0].value,
+                                        type: bacData.objectId.type
+                                    });
                                 }
                             }
-                            if (lastStatus !== 'connect-ok') {
-                                _emitStatus('connect-ok');                    
+                        });
+                        if (result.length) {
+                            let varsValueChanged = await _updateVarsValue(deviceId, result);
+                            lastTimestampValue = new Date().getTime();
+                            _emitValues(varsValue);
+                            if (this.addDaq && !utils.isEmptyObject(varsValueChanged)) {
+                                this.addDaq(varsValueChanged, data.name, data.id);
                             }
                         }
-                    });
+                    }
+                    if (lastStatus !== 'connect-ok') {
+                        _emitStatus('connect-ok');
+                    }
                 } catch (err) {
                     if (err) {
                         logger.error(`'${data.name}' readPropertyMultiple error! ${err}`);
@@ -187,7 +200,7 @@ function BACNETclient(_data, _logger, _events) {
             }
             _checkWorking(false);
         } else {
-            _emitStatus('connect-busy');                    
+            _emitStatus('connect-busy');
         }
 
     }
@@ -258,10 +271,10 @@ function BACNETclient(_data, _logger, _events) {
     /**
      * Set Tag value, used to set value from frontend
      */
-    this.setValue = function (tagId, value) {
+    this.setValue = async function (tagId, value) {
         if (data.tags[tagId]) {
             var obj = _extractId(data.tags[tagId].address);
-            value = deviceUtils.tagRawCalculator(value, data.tags[tagId]);
+            value = await deviceUtils.tagRawCalculator(value, data.tags[tagId], runtime);
             _writeProperty(_getDeviceAddress(devices[data.tags[tagId].memaddress]), obj, value).then(result => {
                 logger.info(`'${data.name}' setValue(${tagId}, ${result})`, true, true);
             }, reason => {
@@ -293,16 +306,34 @@ function BACNETclient(_data, _logger, _events) {
 
     /**
      * Return the timestamp of last read tag operation on polling
-     * @returns 
+     * @returns
      */
      this.lastReadTimestamp = () => {
         return lastTimestampValue;
     }
 
     /**
+     * Return the Daq settings of Tag
+     * @returns
+     */
+    this.getTagDaqSettings = (tagId) => {
+        return data.tags[tagId] ? data.tags[tagId].daq : null;
+    }
+
+    /**
+     * Set Daq settings of Tag
+     * @returns
+     */
+    this.setTagDaqSettings = (tagId, settings) => {
+        if (data.tags[tagId]) {
+            utils.mergeObjectsValues(data.tags[tagId].daq, settings);
+        }
+    }
+
+    /**
      * Connect the client to device
      * Listening after broadcast query
-     * @param {*} callback 
+     * @param {*} callback
      */
     var _connect = function() {
         return new Promise(function (resolve, reject) {
@@ -311,7 +342,7 @@ function BACNETclient(_data, _logger, _events) {
                 ipInterface = data.property.address.substring(0, data.property.address.indexOf(':'));
                 var port = data.property.address.substring(data.property.address.indexOf(':') + 1);
             }
-            var settings = { 
+            var settings = {
                 interface: ipInterface,
                 port: parseInt(port) || 47808,
                 adpuTimeout: parseInt(data.property.adpuTimeout) || 6000
@@ -369,8 +400,8 @@ function BACNETclient(_data, _logger, _events) {
     }
 
     /**
-     * Ask all devices name 
-     * @param {*} devices 
+     * Ask all devices name
+     * @param {*} devices
      */
     var _askName = function (devices) {
         return new Promise(async function (resolve, reject) {
@@ -397,7 +428,7 @@ function BACNETclient(_data, _logger, _events) {
                             }
                         }
                     }
-                    resolve();          
+                    resolve();
                 }, reason => {
                     if (reason) {
                         if (reason.stack) {
@@ -418,7 +449,7 @@ function BACNETclient(_data, _logger, _events) {
 
     /**
      * Read Objects list of device, in Device Object
-     * @param {*} instance 
+     * @param {*} instance
      */
     var _readObjectList = function(instance) {
         return new Promise(function (resolve, reject) {
@@ -453,7 +484,7 @@ function BACNETclient(_data, _logger, _events) {
                                 }
                             }
                         }
-                        resolve(objects);          
+                        resolve(objects);
                     }, reason => {
                         if (reason) {
                             if (reason.stack) {
@@ -473,8 +504,8 @@ function BACNETclient(_data, _logger, _events) {
 
     /**
      * Read Object property, Object are defined with type and instance
-     * @param {*} bacobj 
-     * @param {*} property 
+     * @param {*} bacobj
+     * @param {*} property
      */
     var _readProperty = function(address, bacobj, property) {
         return new Promise(function (resolve, reject) {
@@ -495,13 +526,13 @@ function BACNETclient(_data, _logger, _events) {
             var tvalue = {type: bacnet.enum.ApplicationTag.NULL, value: value};
             bacobj.type = parseInt(bacobj.type);
             bacobj.instance = parseInt(bacobj.instance);
-            if (bacobj.type === bacnet.enum.ObjectType.ANALOG_INPUT || 
-                bacobj.type === bacnet.enum.ObjectType.ANALOG_OUTPUT || 
+            if (bacobj.type === bacnet.enum.ObjectType.ANALOG_INPUT ||
+                bacobj.type === bacnet.enum.ObjectType.ANALOG_OUTPUT ||
                 bacobj.type === bacnet.enum.ObjectType.ANALOG_VALUE) {
                 tvalue.type = bacnet.enum.ApplicationTag.REAL;
                 tvalue.value = parseFloat(value);
-            } else if (bacobj.type === bacnet.enum.ObjectType.BINARY_INPUT || 
-                bacobj.type === bacnet.enum.ObjectType.BINARY_OUTPUT || 
+            } else if (bacobj.type === bacnet.enum.ObjectType.BINARY_INPUT ||
+                bacobj.type === bacnet.enum.ObjectType.BINARY_OUTPUT ||
                 bacobj.type === bacnet.enum.ObjectType.BINARY_VALUE) {
                 tvalue.type = bacnet.enum.ApplicationTag.ENUMERATED;
                 tvalue.value = parseInt(value);
@@ -520,7 +551,7 @@ function BACNETclient(_data, _logger, _events) {
 
     /**
      * Return the Device
-     * @param {*} deviceId 
+     * @param {*} deviceId
      */
     var _getDevice = function (deviceId) {
         for (var id in devices) {
@@ -533,9 +564,9 @@ function BACNETclient(_data, _logger, _events) {
 
     /**
      * Search and return the object
-     * @param {*} objs 
-     * @param {*} type 
-     * @param {*} instance 
+     * @param {*} objs
+     * @param {*} type
+     * @param {*} instance
      */
     var _getObject = function (objs, type, instance) {
         for (var index in objs) {
@@ -548,7 +579,7 @@ function BACNETclient(_data, _logger, _events) {
 
     /**
      * Return the object class text
-     * @param {*} type 
+     * @param {*} type
      */
     var _getObjectClass = function (type) {
         if (type === bacnet.enum.ObjectType.DEVICE) {
@@ -572,7 +603,7 @@ function BACNETclient(_data, _logger, _events) {
 
     /**
      * Return if is a object to shoe and config (only Analog and Digital)
-     * @param {*} type 
+     * @param {*} type
      */
     var _isObjectToShow = function (type) {
         if (type === bacnet.enum.ObjectType.DEVICE) {
@@ -596,9 +627,9 @@ function BACNETclient(_data, _logger, _events) {
 
     /**
      * Update the Tags values read
-     * @param {*} vars 
+     * @param {*} vars
      */
-    var _updateVarsValue = (deviceId, vars) => {
+    var _updateVarsValue = async (deviceId, vars) => {
         const timestamp = new Date().getTime();
         var someval = false;
         var changed = {};
@@ -608,12 +639,12 @@ function BACNETclient(_data, _logger, _events) {
                 var tag = requestItemsMap[deviceId][address];
                 if (!varsValue[tag.id] || varsValue[tag.id].value !== vars[index].value) {
                     changed[tag.id] = { id: tag.id, value: vars[index].value, type: vars[index].type, daq: tag.daq };
-                    varsValue[tag.id] = changed[tag.id];    
-                } 
+                    varsValue[tag.id] = changed[tag.id];
+                }
                 varsValue[tag.id].changed = varsValue[tag.id].rawValue !== vars[index].rawValue;
                 if (!utils.isNullOrUndefined(vars[index].rawValue)) {
                     varsValue[tag.id].rawValue = vars[index].rawValue;
-                    varsValue[tag.id].value = deviceUtils.tagValueCompose(vars[index].rawValue, varsValue[tag.id]);
+                    varsValue[tag.id].value = await deviceUtils.tagValueCompose(vars[index].rawValue, varsValue[tag.id] ? varsValue[tag.id].value : null, tag, runtime);
                     vars[index].value = varsValue[tag.id].value;
                     if (this.addDaq && deviceUtils.tagDaqToSave(varsValue[tag.id], timestamp)) {
                         changed[tag.id] = { id: tag.id, value: varsValue[tag.id].value, type: vars[index].type, daq: tag.daq, timestamp: timestamp };
@@ -642,9 +673,9 @@ function BACNETclient(_data, _logger, _events) {
     }
 
     /**
-     * Return formatted object id 
-     * @param {*} type 
-     * @param {*} instance 
+     * Return formatted object id
+     * @param {*} type
+     * @param {*} instance
      */
     var _formatId = function (type, instance) {
         return type + '-' + instance;
@@ -652,7 +683,7 @@ function BACNETclient(_data, _logger, _events) {
 
     /**
      * Return id and type from formatted id
-     * @param {*} id 
+     * @param {*} id
      */
     var _extractId = function (id) {
         let tks = id.split('-');
@@ -661,7 +692,7 @@ function BACNETclient(_data, _logger, _events) {
 
     /**
      * To manage a overloading connection
-     * @param {*} check 
+     * @param {*} check
      */
     var _checkWorking = function (check) {
         if (check && working) {
@@ -679,7 +710,7 @@ function BACNETclient(_data, _logger, _events) {
 
     /**
      * Emit Objects (Tags) in application
-     * @param {*} values 
+     * @param {*} values
      */
     var _emitValues = function (values) {
         events.emit('device-value:changed', { id: data.name, values: values });
@@ -687,7 +718,7 @@ function BACNETclient(_data, _logger, _events) {
 
     /**
      * Emit status in application
-     * @param {*} status 
+     * @param {*} status
      */
     var _emitStatus = function (status) {
         lastStatus = status;
@@ -703,10 +734,10 @@ module.exports = {
     init: function (settings) {
         // deviceCloseTimeout = settings.deviceCloseTimeout || 15000;
     },
-    create: function (data, logger, events, manager) {
+    create: function (data, logger, events, manager, runtime) {
         try { bacnet = require('node-bacnet'); } catch { }
         if (!bacnet && manager) { try { bacnet = manager.require('node-bacnet'); } catch { } }
         if (!bacnet) return null;
-        return new BACNETclient(data, logger, events);
+        return new BACNETclient(data, logger, events, runtime);
     }
 }

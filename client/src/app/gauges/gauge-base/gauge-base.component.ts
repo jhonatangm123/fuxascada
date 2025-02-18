@@ -108,7 +108,8 @@ export class GaugeBaseComponent {
         }
         gaugeStatus.actionRef.type = act.type;
         if (toEnable) {
-            if (gaugeStatus.actionRef.timer) {
+            if (gaugeStatus.actionRef.timer &&
+                (GaugeBaseComponent.getBlinkActionId(act) === gaugeStatus.actionRef.spool?.actId)) {
                 return;
             }
             GaugeBaseComponent.clearAnimationTimer(gaugeStatus.actionRef);
@@ -133,16 +134,16 @@ export class GaugeBaseComponent {
                             element.style.backgroundColor = act.options.fillA;
                             element.style.color = act.options.strokeA;
                         } else {
-                            element.node.setAttribute('fill', act.options.fillA);
-                            element.node.setAttribute('stroke', act.options.strokeA);
+                            GaugeBaseComponent.walkTreeNodeToSetAttribute(element.node, 'fill', act.options.fillA);
+                            GaugeBaseComponent.walkTreeNodeToSetAttribute(element.node, 'stroke', act.options.strokeA);
                         }
                     } else {
                         if (dom) {
                             element.style.backgroundColor = act.options.fillB;
                             element.style.color = act.options.strokeB;
                         } else {
-                            element.node.setAttribute('fill', act.options.fillB);
-                            element.node.setAttribute('stroke', act.options.strokeB);
+                            GaugeBaseComponent.walkTreeNodeToSetAttribute(element.node, 'fill', act.options.fillB);
+                            GaugeBaseComponent.walkTreeNodeToSetAttribute(element.node, 'stroke', act.options.strokeB);
                         }
                     }
                 } catch (err) {
@@ -170,8 +171,8 @@ export class GaugeBaseComponent {
                         element.style.backgroundColor = gaugeStatus.actionRef.spool?.bk;
                         element.style.color = gaugeStatus.actionRef.spool?.clr;
                     } else if (gaugeStatus.actionRef.spool) {
-                        element.node.setAttribute('fill', gaugeStatus.actionRef.spool.bk);
-                        element.node.setAttribute('stroke', gaugeStatus.actionRef.spool.clr);
+                        GaugeBaseComponent.walkTreeNodeToSetAttribute(element.node, 'fill', gaugeStatus.actionRef.spool.bk);
+                        GaugeBaseComponent.walkTreeNodeToSetAttribute(element.node, 'stroke', gaugeStatus.actionRef.spool.clr);
                     }
                 }
             } catch (err) {
@@ -208,7 +209,20 @@ export class GaugeBaseComponent {
         return value;
     }
 
+    static toggleBitmask(value: number, bitmask: number): number {
+        return value ^ bitmask;
+    }
+
     static getBlinkActionId(act: GaugeAction) {
         return `${act.variableId}-${act.range.max}-${act.range.min}`;
+    }
+
+    static walkTreeNodeToSetAttribute(node, attributeName: string, attributeValue: string | number) {
+        node?.setAttribute(attributeName, attributeValue);
+        Utils.walkTree(node, (element) => {
+            if (element.id?.startsWith('SHE') || element.id?.startsWith('svg_')) {
+                element.setAttribute(attributeName, attributeValue);
+            }
+        });
     }
 }

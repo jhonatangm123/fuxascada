@@ -1,13 +1,13 @@
 import { Component, OnInit, Inject, OnDestroy, ViewChild } from '@angular/core';
-import { MatDialogRef, MAT_DIALOG_DATA } from '@angular/material/dialog';
+import { MatLegacyDialogRef as MatDialogRef, MAT_LEGACY_DIALOG_DATA as MAT_DIALOG_DATA } from '@angular/material/legacy-dialog';
 import { MatExpansionPanel } from '@angular/material/expansion';
 import { Subscription, delay } from 'rxjs';
 import { TranslateService } from '@ngx-translate/core';
 
-import { HmiService } from '../../_services/hmi.service';
+import { EndPointSettings, HmiService } from '../../_services/hmi.service';
 import { AppService } from '../../_services/app.service';
 import { ProjectService } from '../../_services/project.service';
-import { DeviceType, DeviceSecurity, MessageSecurityMode, SecurityPolicy, ModbusOptionType } from './../../_models/device';
+import { DeviceType, DeviceSecurity, MessageSecurityMode, SecurityPolicy, ModbusOptionType, ModbusReuseModeType } from './../../_models/device';
 
 @Component({
 	selector: 'app-device-property',
@@ -20,12 +20,16 @@ export class DevicePropertyComponent implements OnInit, OnDestroy {
 	@ViewChild('panelProperty', {static: false}) panelProperty: MatExpansionPanel;
 	@ViewChild('panelCertificate', {static: false}) panelCertificate: MatExpansionPanel;
 
+	tableRadio: any;
+	databaseTables = [];
+
 	securityRadio: any;
 	mode: any;
 	deviceType: any = {};
 	showPassword: boolean;
 
 	pollingPlcType = [{text: '200 ms', value: 200},
+					  {text: '350 ms', value: 350},
 					  {text: '500 ms', value: 500},
 					  {text: '700 ms', value: 700},
 					  {text: '1 sec', value: 1000},
@@ -70,6 +74,8 @@ export class DevicePropertyComponent implements OnInit, OnDestroy {
 	hostInterfaces = [];
 	modbusRtuOptionType = [ModbusOptionType.SerialPort, ModbusOptionType.RTUBufferedPort, ModbusOptionType.AsciiPort];
 	modbusTcpOptionType = [ModbusOptionType.TcpPort, ModbusOptionType.UdpPort, ModbusOptionType.TcpRTUBufferedPort, ModbusOptionType.TelnetPort];
+	modbusReuseModeType = ModbusReuseModeType;
+
 	result = '';
 	private subscriptionDeviceProperty: Subscription;
 	private subscriptionHostInterfaces: Subscription;
@@ -144,12 +150,24 @@ export class DevicePropertyComponent implements OnInit, OnDestroy {
 					this.propertyError = res.error;
 				}
 			} else if (res.type === DeviceType.BACnet) {
+			} else if (res.type === DeviceType.ODBC) {
+				if (res?.error) {
+					this.propertyError = res.error;
+				} else {
+					this.databaseTables = res.result;
+					for (let idx = 0; idx < res.result?.length; idx++) {
+						if (this.isSecurityMode(res.result[idx])) {
+							this.tableRadio = res.result[idx];
+						}
+					}
+					this.propertyError = '';
+				}
 			}
-
 			this.propertyLoading = false;
 		});
 		// check security
-		if (this.data.device.id && (this.data.device.type === DeviceType.OPCUA || this.data.device.type === DeviceType.MQTTclient)) {
+		if (this.data.device.id && (this.data.device.type === DeviceType.OPCUA || this.data.device.type === DeviceType.MQTTclient
+			|| this.data.device.type === DeviceType.ODBC)) {
 			this.projectService.getDeviceSecurity(this.data.device.id).pipe(
 				delay(500)
 			).subscribe(result => {
@@ -226,6 +244,17 @@ export class DevicePropertyComponent implements OnInit, OnDestroy {
 		this.hmiService.askWebApiProperty(this.data.device.property);
 	}
 
+	onCheckOdbc() {
+		this.propertyLoading = true;
+		this.result = '';
+		this.hmiService.askDeviceProperty(<EndPointSettings> {
+			address: this.data.device.property.address,
+			uid: this.security.username,
+			pwd: this.security.password,
+			id: this.data.device.id
+		}, this.data.device.type);
+	}
+
 	// onCheckBACnetDevice() {
 	// 	this.propertyLoading = true;
 	// 	this.hmiService.askDeviceProperty(this.data.device.property.address, this.data.device.type);
@@ -263,34 +292,39 @@ export class DevicePropertyComponent implements OnInit, OnDestroy {
 	}
 
 	getSecurity(): DeviceSecurityGeneral {
-		if (!this.propertyExpanded || (this.data.device.type !== DeviceType.OPCUA && this.data.device.type !== DeviceType.MQTTclient)) {
-			return null;
-		} else {
-			if (this.data.device.type === DeviceType.OPCUA) {
-				if (this.securityRadio || this.security.username || this.security.password) {
-					let result = <DeviceSecurityGeneral>{
-						mode: this.securityRadio,
-						uid: this.security.username,
-						pwd: this.security.password
-					};
-					return result;
-				}
-			} else if (this.data.device.type === DeviceType.MQTTclient) {
-				if (this.security.clientId || this.security.username || this.security.password || this.security.certificateFileName ||
-					this.security.privateKeyFileName || this.security.caCertificateFileName) {
-					let result = <DeviceSecurityGeneral>{
-						clientId: this.security.clientId,
-						uid: this.security.username,
-						pwd: this.security.password,
-						cert: this.security.certificateFileName,
-						pkey: this.security.privateKeyFileName,
-						caCert: this.security.caCertificateFileName
-					};
-					return result;
-				}
-            }
-			return null;
+		if (this.propertyExpanded && this.data.device.type === DeviceType.OPCUA) {
+			if (this.securityRadio || this.security.username || this.security.password) {
+				let result = <DeviceSecurityGeneral>{
+					mode: this.securityRadio,
+					uid: this.security.username,
+					pwd: this.security.password
+				};
+				return result;
+			}
+		} else if (this.propertyExpanded && this.data.device.type === DeviceType.MQTTclient) {
+			if (this.security.clientId || this.security.username || this.security.password || this.security.certificateFileName ||
+				this.security.privateKeyFileName || this.security.caCertificateFileName) {
+				let result = <DeviceSecurityGeneral>{
+					clientId: this.security.clientId,
+					uid: this.security.username,
+					pwd: this.security.password,
+					cert: this.security.certificateFileName,
+					pkey: this.security.privateKeyFileName,
+					caCert: this.security.caCertificateFileName
+				};
+				return result;
+			}
+		} else if (this.data.device.type === DeviceType.ODBC) {
+			if (this.tableRadio || this.security.username || this.security.password) {
+				let result = <DeviceSecurityGeneral>{
+					mode: this.tableRadio,
+					uid: this.security.username,
+					pwd: this.security.password
+				};
+				return result;
+			}
 		}
+		return null;
 	}
 
 	setSecurity(security: string) {

@@ -4,7 +4,7 @@ import * as io from 'socket.io-client';
 import { environment } from '../../environments/environment';
 import { Tag, DeviceType } from '../_models/device';
 import { Hmi, Variable, GaugeSettings, DaqQuery, DaqResult, GaugeEventSetValueType } from '../_models/hmi';
-import { AlarmQuery } from '../_models/alarm';
+import { AlarmQuery, AlarmsFilter } from '../_models/alarm';
 import { ProjectService } from '../_services/project.service';
 import { EndPointApi } from '../_helpers/endpointapi';
 import { Utils } from '../_helpers/utils';
@@ -28,6 +28,7 @@ export class HmiService {
     @Output() onDeviceTagsRequest: EventEmitter<any> = new EventEmitter();
     @Output() onScriptConsole: EventEmitter<any> = new EventEmitter();
     @Output() onGoTo: EventEmitter<ScriptSetView> = new EventEmitter();
+    @Output() onOpen: EventEmitter<ScriptOpenCard> = new EventEmitter();
 
     onServerConnection$ = new BehaviorSubject<boolean>(false);
 
@@ -44,6 +45,8 @@ export class HmiService {
     private removeFunctionType = Utils.getEnumKey(GaugeEventSetValueType, GaugeEventSetValueType.remove);
     private homeTagsSubscription = [];
     private viewsTagsSubscription = [];
+
+    getGaugeMapped: (gaugeName: string) => void; // function binded in GaugeManager
 
     constructor(public projectService: ProjectService,
         private translateService: TranslateService,
@@ -92,6 +95,7 @@ export class HmiService {
             if (device?.type === DeviceType.internal) {
                 this.variables[sigId].timestamp = new Date().getTime();
                 this.setSignalValue(this.variables[sigId]);
+                device.tags[sigId].value = value;
             } else {
                 this.socket.emit(IoEventTypes.DEVICE_VALUES, { cmd: 'set', var: this.variables[sigId], fnc: [fnc, value] });
             }
@@ -238,7 +242,9 @@ export class HmiService {
         this.socket.on(IoEventTypes.SCRIPT_COMMAND, (message) => {
             this.onScriptCommand(message);
         });
-
+        this.socket.on(IoEventTypes.ALIVE, (message) => {
+            this.onServerConnection$.next(true);
+        });
         this.askDeviceValues();
         this.askAlarmsStatus();
     }
@@ -255,7 +261,7 @@ export class HmiService {
     /**
      * Ask device status to backend
      */
-    public askDeviceProperty(endpoint, type) {
+    public askDeviceProperty(endpoint: EndPointSettings & any, type) {
         if (this.socket) {
             let msg = { endpoint: endpoint, type: type };
             this.socket.emit(IoEventTypes.DEVICE_PROPERTY, msg);
@@ -296,7 +302,7 @@ export class HmiService {
      */
     public askDeviceValues() {
         if (this.socket) {
-            this.socket.emit(IoEventTypes.DEVICE_VALUES, 'get');
+            this.socket.emit(IoEventTypes.DEVICE_VALUES, { cmd: 'get' });
         } else if (this.bridge) {
             this.bridge.getDeviceValues(null);
         }
@@ -377,6 +383,21 @@ export class HmiService {
         if (this.socket) {
             let msg = { tagsId: tagsId };
             this.socket.emit(IoEventTypes.DEVICE_TAGS_UNSUBSCRIBE, msg);
+        }
+    }
+
+    /**
+     * Enable device
+     * @param deviceName
+     * @param enable
+     */
+    public deviceEnable(deviceName: string, enable: boolean) {
+        if (this.socket) {
+            let msg = {
+                deviceName: deviceName,
+                enable: enable
+            };
+            this.socket.emit(IoEventTypes.DEVICE_ENABLE, msg);
         }
     }
     //#endregion
@@ -522,8 +543,8 @@ export class HmiService {
     //#endregion
 
     //#region Current Alarms functions
-    getAlarmsValues() {
-        return this.projectService.getAlarmsValues();
+    getAlarmsValues(alarmFilter?: AlarmsFilter) {
+        return this.projectService.getAlarmsValues(alarmFilter);
     }
 
     getAlarmsHistory(query: AlarmQuery) {
@@ -548,13 +569,15 @@ export class HmiService {
 
     //#endregion
 
-    private onScriptCommand(message: ScriptCommandMessage) {
-        switch (message.command) {
-            case ScriptCommandEnum.SETVIEW:
-                if (message.params && message.params.length) {
+    public onScriptCommand(message: ScriptCommandMessage) {
+        if (message.params && message.params.length) {
+            switch (message.command) {
+                case ScriptCommandEnum.SETVIEW:
                     this.onGoTo.emit(<ScriptSetView>{ viewName: message.params[0], force: message.params[1] });
-                }
+                case ScriptCommandEnum.OPENCARD:
+                    this.onOpen.emit(<ScriptOpenCard>{ viewName: message.params[0], options: message.params[1] });
                 break;
+            }
         }
     }
 }
@@ -613,20 +636,23 @@ export enum IoEventTypes {
     DEVICE_TAGS_REQUEST = 'device-tags-request',
     DEVICE_TAGS_SUBSCRIBE = 'device-tags-subscribe',
     DEVICE_TAGS_UNSUBSCRIBE = 'device-tags-unsubscribe',
+    DEVICE_ENABLE = 'device-enable',
     DAQ_QUERY = 'daq-query',
     DAQ_RESULT = 'daq-result',
     DAQ_ERROR = 'daq-error',
     ALARMS_STATUS = 'alarms-status',
     HOST_INTERFACES = 'host-interfaces',
     SCRIPT_CONSOLE = 'script-console',
-    SCRIPT_COMMAND = 'script-command'
+    SCRIPT_COMMAND = 'script-command',
+    ALIVE = 'heartbeat'
 }
 
-const ScriptCommandEnum = {
+export const ScriptCommandEnum = {
     SETVIEW: 'SETVIEW',
+    OPENCARD: 'OPENCARD',
 };
 
-interface ScriptCommandMessage {
+export interface ScriptCommandMessage {
     command: string;
     params: any[];
 }
@@ -634,4 +660,16 @@ interface ScriptCommandMessage {
 export interface ScriptSetView {
     viewName: string;
     force: boolean;
+}
+
+export interface ScriptOpenCard {
+    viewName: string;
+    options: {};
+}
+
+export interface EndPointSettings {
+    address: string;
+    uid: string;
+    pwd: string;
+    id?: string;
 }

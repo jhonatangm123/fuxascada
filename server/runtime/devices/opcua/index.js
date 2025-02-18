@@ -7,8 +7,9 @@ const async = require('async');
 const utils = require('../../utils');
 const deviceUtils = require('../device-utils');
 
-function OpcUAclient(_data, _logger, _events) {
+function OpcUAclient(_data, _logger, _events, _runtime) {
 
+    var runtime = _runtime;
     var data = _data;                   // Current Device data { id, name, tags, enabled, ... }
     var logger = _logger;               // Logger
     var working = false;                // Working flag to manage overloading polling and connection
@@ -58,16 +59,16 @@ function OpcUAclient(_data, _logger, _events) {
                                             opts['securityPolicy'] = property.mode.securityPolicy;
                                         }
                                     }
-                                    client = opcua.OPCUAClient.create(opts);  
+                                    client = opcua.OPCUAClient.create(opts);
                                 }
                                 callback();
                             }).catch(function (err) {
                                 callback(err);
-                            });  
+                            });
                         } else {
                             callback();
                         }
-                    },                    
+                    },
                     // step 2 connect
                     function (callback) {
                         const endpoint = data.property.address;
@@ -86,7 +87,7 @@ function OpcUAclient(_data, _logger, _events) {
                         });
                         client.on("backoff", (retry, delay) => {
                             logger.error(`'${data.name}' retry to connect! ${retry}`);
-                        });                        
+                        });
                     },
                     // step 3 create session
                     function (callback) {
@@ -167,30 +168,6 @@ function OpcUAclient(_data, _logger, _events) {
         return new Promise(function (resolve, reject) {
             // "RootFolder"
             if (the_session) {
-                const b = [{
-                    nodeId: nodeId,
-                    referenceTypeId: 'Organizes',
-                    includeSubtypes: true,
-                    browseDirection: opcua.BrowseDirection.Forward,
-                    resultMask: 0x3f
-
-                },
-                {
-                    nodeId: nodeId,
-                    referenceTypeId: 'Aggregates',
-                    includeSubtypes: true,
-                    browseDirection: opcua.BrowseDirection.Forward,
-                    resultMask: 0x3f
-
-                },
-                {
-                    nodeId: nodeId,
-                    referenceTypeId: 'HasSubtype',
-                    includeSubtypes: true,
-                    browseDirection: opcua.BrowseDirection.Forward,
-                    resultMask: 0x3f
-                }];
-
                 the_session.browse(nodeId, function (err, browseResult) {
                     if (!err) {
                         let opcNodes = [];
@@ -226,7 +203,7 @@ function OpcUAclient(_data, _logger, _events) {
 
     /**
      * Browser the next children nodes after contipoint position
-     * @param {*} contipoint 
+     * @param {*} contipoint
      */
     var _browseNext = function (contipoint) {
         var opcNodes = [];
@@ -266,7 +243,7 @@ function OpcUAclient(_data, _logger, _events) {
             });
         });
     }
-                 
+
     /**
      * Read node attribute
      */
@@ -307,7 +284,7 @@ function OpcUAclient(_data, _logger, _events) {
      * Take the current Tags value (only changed), Reset the change flag, Emit Tags value
      * Save DAQ value
      */
-    this.polling = function () {
+    this.polling = async function () {
         if (_checkWorking(true)) {
             if (!monitored) {
                 _startMonitor().then(ok => {
@@ -321,7 +298,7 @@ function OpcUAclient(_data, _logger, _events) {
                 });
             } else if (the_session && client) {
                 try {
-                    var varsValueChanged = _checkVarsChanged();
+                    var varsValueChanged = await _checkVarsChanged();
                     lastTimestampValue = new Date().getTime();
                     _emitValues(varsValue);
 
@@ -389,11 +366,11 @@ function OpcUAclient(_data, _logger, _events) {
     /**
      * Set Tag value, used to set value from frontend
      */
-    this.setValue = function (tagId, value) {
+    this.setValue = async function (tagId, value) {
         if (the_session && data.tags[tagId]) {
             let opctype = _toDataType(data.tags[tagId].type);
             let valueToSend = _toValue(opctype, value);
-            valueToSend = deviceUtils.tagRawCalculator(valueToSend, data.tags[tagId]);
+            valueToSend = await deviceUtils.tagRawCalculator(valueToSend, data.tags[tagId], runtime);
             var nodesToWrite = [
                 {
                     nodeId: data.tags[tagId].address,
@@ -433,11 +410,11 @@ function OpcUAclient(_data, _logger, _events) {
         this.addDaq = fnc;                          // Add the DAQ value to db history
     }
     this.addDaq = null;                             // Callback to add the DAQ value to db history
-    
+
 
     /**
      * Return the timestamp of last read tag operation on polling
-     * @returns 
+     * @returns
      */
      this.lastReadTimestamp = () => {
         return lastTimestampValue;
@@ -451,8 +428,26 @@ function OpcUAclient(_data, _logger, _events) {
     }
 
     /**
+     * Return the Daq settings of Tag
+     * @returns
+     */
+    this.getTagDaqSettings = (tagId) => {
+        return data.tags[tagId] ? data.tags[tagId].daq : null;
+    }
+
+    /**
+     * Set Daq settings of Tag
+     * @returns
+     */
+    this.setTagDaqSettings = (tagId, settings) => {
+        if (data.tags[tagId]) {
+            utils.mergeObjectsValues(data.tags[tagId].daq, settings);
+        }
+    }
+
+    /**
      * Disconnect the OPC UA client and close session if used
-     * @param {*} callback 
+     * @param {*} callback
      */
     var _disconnect = function (callback) {
         if (!the_session) {
@@ -497,7 +492,7 @@ function OpcUAclient(_data, _logger, _events) {
     /**
      * Start the monitor by subsribe the Tags to check if value change
      * samplingInterval = 1000 msec.
-     * @param {*} callback 
+     * @param {*} callback
      */
     var _startMonitor = function () {
         return new Promise(async function (resolve, reject) {
@@ -529,7 +524,7 @@ function OpcUAclient(_data, _logger, _events) {
     /**
      * Callback from monitor of changed Tag value
      * And set the changed value to local Tags
-     * @param {*} _nodeId 
+     * @param {*} _nodeId
      */
     var _monitorcallback = function (_nodeId) {
         var nodeId = _nodeId;
@@ -560,11 +555,11 @@ function OpcUAclient(_data, _logger, _events) {
     /**
      * Return the Tags that have value changed and clear value changed flag of all Tags
      */
-    var _checkVarsChanged = () => {
+    var _checkVarsChanged = async () => {
         const timestamp = new Date().getTime();
         var result = {};
         for (var id in data.tags) {
-            data.tags[id].value = deviceUtils.tagValueCompose(data.tags[id].rawValue, data.tags[id]);
+            data.tags[id].value = await deviceUtils.tagValueCompose(data.tags[id].rawValue, varsValue[id] ? varsValue[id].value : null, data.tags[id], runtime);
             if (this.addDaq && !utils.isNullOrUndefined(data.tags[id].value) && deviceUtils.tagDaqToSave(data.tags[id], timestamp)) {
                 result[id] = data.tags[id];
             }
@@ -576,7 +571,7 @@ function OpcUAclient(_data, _logger, _events) {
 
     /**
      * To manage a overloading connection
-     * @param {*} check 
+     * @param {*} check
      */
     var _checkWorking = function (check) {
         if (check && working) {
@@ -591,7 +586,7 @@ function OpcUAclient(_data, _logger, _events) {
 
     /**
      * Emit Tags in application
-     * @param {*} values 
+     * @param {*} values
      */
     var _emitValues = function (values) {
         events.emit('device-value:changed', { id: data.id, values: values });
@@ -599,7 +594,7 @@ function OpcUAclient(_data, _logger, _events) {
 
     /**
      * Emit status in application
-     * @param {*} status 
+     * @param {*} status
      */
     var _emitStatus = function (status) {
         lastStatus = status;
@@ -608,8 +603,8 @@ function OpcUAclient(_data, _logger, _events) {
 
     /**
      * Return formatted Tag attribute
-     * @param {*} attribute 
-     * @param {*} dataValue 
+     * @param {*} attribute
+     * @param {*} dataValue
      */
     var _attrToObject = function (attribute, dataValue) {
 
@@ -667,7 +662,7 @@ function OpcUAclient(_data, _logger, _events) {
 
     /**
      * Convert OPCUA data type from string
-     * @param {*} type 
+     * @param {*} type
      */
     var _toDataType = function (type) {
         if (type === 'Boolean') {
@@ -705,13 +700,13 @@ function OpcUAclient(_data, _logger, _events) {
 
     /**
      * Convert value from string depending of type
-     * @param {*} type 
-     * @param {*} value 
+     * @param {*} type
+     * @param {*} value
      */
     var _toValue = function (type, value) {
         switch (type) {
             case opcua.DataType.Boolean:
-                if (value.toLowerCase() === 'true' || value === '1') {
+                if (typeof value === 'string' && (value.toLowerCase() === 'true' || value === '1')) {
                     return true;
                 }
                 return false;
@@ -738,18 +733,18 @@ function OpcUAclient(_data, _logger, _events) {
  */
 function getEndPoints(endpointUrl) {
     return new Promise(function (resolve, reject) {
-        if (loadOpcUALib()) { 
+        if (loadOpcUALib()) {
             let opts = { connectionStrategy: { maxRetry: 1 } };
-            let client = opcua.OPCUAClient.create(opts);  
+            let client = opcua.OPCUAClient.create(opts);
             try {
                 client.connect(endpointUrl, function (err) {
                     if (err) {
                         reject('getendpoints-connect-error: ' + err.message);
                     } else {
                         const endpoints = client.getEndpoints().then(endpoints => {
-                            const reducedEndpoints = endpoints.map(endpoint => ({ 
-                                endpointUrl: endpoint.endpointUrl, 
-                                securityMode: endpoint.securityMode.toString(), 
+                            const reducedEndpoints = endpoints.map(endpoint => ({
+                                endpointUrl: endpoint.endpointUrl,
+                                securityMode: endpoint.securityMode.toString(),
                                 securityPolicy: endpoint.securityPolicyUri.toString(),
                             }));
                             resolve( reducedEndpoints);
@@ -781,9 +776,9 @@ module.exports = {
     init: function (settings) {
         // deviceCloseTimeout = settings.deviceCloseTimeout || 15000;
     },
-    create: function (data, logger, events, manager) {
+    create: function (data, logger, events, manager, runtime) {
         if (!loadOpcUALib()) return null;
-        return new OpcUAclient(data, logger, events);
+        return new OpcUAclient(data, logger, events, runtime);
     },
     getEndPoints: getEndPoints
 }

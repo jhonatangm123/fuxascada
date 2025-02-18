@@ -1,4 +1,4 @@
-name: Build and Publish DockerHub image
+name: Build and Publish DHI latest
 
 env:
   app: fuxa

@@ -14,6 +14,12 @@
     width: 370px;
 }
 
+@media (min-width: 1601px) {
+    .editor-sidenav {
+        width: 450px;
+    }
+}
+
 #svg_editor_container {
     background: #aaa;
     height: 100%;
@@ -50,10 +56,6 @@
     padding-top: 5px !important;
     padding-left: 3px;
     font-size: 11px;
-}
-
-.svg-workarea-leftbar-h:active {
-    /* margin-bottom: 4px; */
 }
 
 /* .mat-expansion-panel-content {
@@ -297,8 +299,8 @@
 /* left panel */
 /* --------------- */
 .view-panel {
-    max-height: 400px;
     overflow: auto;
+    cursor: s-resize;
 }
 .leftbar-edit-btn {
     margin-top: 2px;
@@ -315,6 +317,9 @@
     background-color: var(--toolboxPanelBackgroung);
     color: var(--toolboxColor);
     overflow: auto;
+}
+
+.leftbar-panel.h200 {
     max-height: 200px;
 }
 

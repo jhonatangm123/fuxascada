@@ -1,8 +1,8 @@
 import { Component, OnInit, OnDestroy, AfterViewInit, Output, EventEmitter, ElementRef, Input, ViewChild } from '@angular/core';
 import { Subscription } from 'rxjs';
-import { MatDialog } from '@angular/material/dialog';
-import { MatTable, MatTableDataSource } from '@angular/material/table';
-import { MatPaginator } from '@angular/material/paginator';
+import { MatLegacyDialog as MatDialog } from '@angular/material/legacy-dialog';
+import { MatLegacyTable as MatTable, MatLegacyTableDataSource as MatTableDataSource } from '@angular/material/legacy-table';
+import { MatLegacyPaginator as MatPaginator } from '@angular/material/legacy-paginator';
 import { MatSort } from '@angular/material/sort';
 import { TranslateService } from '@ngx-translate/core';
 
@@ -365,6 +365,10 @@ export class DeviceMapComponent implements OnInit, OnDestroy, AfterViewInit {
         this.goto.emit(device);
     }
 
+    withListConfig(device: Device): boolean {
+        return device.type !== DeviceType.ODBC;
+    }
+
     isDevicePropertyToShow(device: Device) {
         if (device.property && device.type !== 'OPCUA') {
             return true;
@@ -423,8 +427,10 @@ export class DeviceMapComponent implements OnInit, OnDestroy, AfterViewInit {
         if (this.devicesStatus[device.id]) {
             let milli = new Date().getTime();
             if (this.devicesStatus[device.id].last + 15000 < milli) {
-                this.devicesStatus[device.id].status = 'connect-error';
-                this.devicesStatus[device.id].last = new Date().getTime();
+                if (this.devicesStatus[device.id].status !== 'connect-off') {
+                    this.devicesStatus[device.id].status = 'connect-error';
+                    this.devicesStatus[device.id].last = new Date().getTime();
+                }
             }
             let st = this.devicesStatus[device.id].status;
             if (st === 'connect-ok') {
@@ -439,7 +445,7 @@ export class DeviceMapComponent implements OnInit, OnDestroy, AfterViewInit {
 
     getDeviceStatusText(device: Device) {
         if (this.devicesStatus[device.id]) {
-            let st = this.devicesStatus[device.id].status.replace('connect-', '');
+            let st = this.devicesStatus[device.id]?.status?.replace('connect-', '');
             if (this.deviceStatusType[st]) {
                 return this.deviceStatusType[st];
             }
@@ -498,6 +504,7 @@ export class DeviceMapComponent implements OnInit, OnDestroy, AfterViewInit {
                         device.property.stopbits = tempdevice.property.stopbits;
                         device.property.parity = tempdevice.property.parity;
                         device.property.options = tempdevice.property.options;
+                        device.property.delay = tempdevice.property.delay;
                         device.property.method = tempdevice.property.method;
                         device.property.format = tempdevice.property.format;
                         device.property.broadcastAddress = tempdevice.property.broadcastAddress;
@@ -505,6 +512,7 @@ export class DeviceMapComponent implements OnInit, OnDestroy, AfterViewInit {
                         if (tempdevice.property.connectionOption) {
                             device.property.connectionOption = tempdevice.property.connectionOption;
                         }
+                        device.property.socketReuse = (device.type === DeviceType.ModbusTCP) ? tempdevice.property.socketReuse : null;
                     }
                     this.projectService.setDevice(device, olddevice, result.security);
                 }
@@ -526,10 +534,13 @@ export class DeviceMapComponent implements OnInit, OnDestroy, AfterViewInit {
     }
 
     plcs(): Device[] {
-        return <Device[]>Object.values(this.devices).filter((d: Device) => d.type !== DeviceType.WebAPI && d.type !== DeviceType.FuxaServer);
+        return <Device[]>Object.values(this.devices).filter((d: Device) => d.type !== DeviceType.WebAPI
+            && d.type !== DeviceType.FuxaServer
+            && d.type !== DeviceType.ODBC);
     }
 
     flows(): Device[] {
-        return <Device[]>Object.values(this.devices).filter((d: Device) => d.type === DeviceType.WebAPI);
+        return <Device[]>Object.values(this.devices).filter((d: Device) => d.type === DeviceType.WebAPI
+            || d.type === DeviceType.ODBC);
     }
 }

@@ -1,5 +1,5 @@
 /**
- * 'ethernetip': use nodePCCC a library that allows communication to certain Allen-Bradley PLCs - 
+ * 'ethernetip': use nodePCCC a library that allows communication to certain Allen-Bradley PLCs -
  * The SLC 500 series, Micrologix and ControlLogix/CompactLogix PLCs using PCCC embedded in Ethernet/IP
  */
 
@@ -8,12 +8,13 @@ var EthernetIp;
 const utils = require('../../utils');
 const deviceUtils = require('../device-utils');
 
-function EthernetIPclient(_data, _logger, _events) {
+function EthernetIPclient(_data, _logger, _events, _runtime) {
 
+    var runtime = _runtime;
     var data = JSON.parse(JSON.stringify(_data)); // Current Device data { id, name, tags, enabled, ... }
     var logger = _logger;
     var events = _events;               // Events to commit change to runtime
-    var lastStatus = '';                // Last Device status     
+    var lastStatus = '';                // Last Device status
     var working = false;                // Working flag to manage overloading polling and connection
     var conn = new EthernetIp;
     var doneReading = false;
@@ -24,7 +25,7 @@ function EthernetIPclient(_data, _logger, _events) {
     var varsValue = [];                 // Signale to send to frontend { id, type, value }
     var lastTimestampValue;             // Last Timestamp of asked values
     /**
-     * initialize the device type 
+     * initialize the device type
      */
     this.init = function (_type) {
         console.error('Not supported!');
@@ -108,30 +109,29 @@ function EthernetIPclient(_data, _logger, _events) {
     }
 
     /**
-     * Read values in polling mode 
+     * Read values in polling mode
      * Update the tags values list, save in DAQ if value changed or in interval and emit values to clients
      */
     this.polling = async function () {
         if (_checkWorking(true)) {
             if (conn && connected) {
                 try {
-                    _readValues().then(result => {
-                        _checkWorking(false);
-                        if (result) {
-                            let varsValueChanged = _updateVarsValue(result);
-                            lastTimestampValue = new Date().getTime();
-                            _emitValues(varsValue);
-                            if (this.addDaq && !utils.isEmptyObject(varsValueChanged)) {
-                                this.addDaq(varsValueChanged, data.name, data.id);
-                            }
-                        } else {
-                            // console.error('then error');
+                    const result = await _readValues();
+
+                    _checkWorking(false);
+                    if (result) {
+                        let varsValueChanged = await _updateVarsValue(result);
+                        lastTimestampValue = new Date().getTime();
+                        _emitValues(varsValue);
+                        if (this.addDaq && !utils.isEmptyObject(varsValueChanged)) {
+                            this.addDaq(varsValueChanged, data.name, data.id);
                         }
-                    }, reason => {
-                        logger.error(`'${data.name}' _readValues error! ${reason}`);
-                        _checkWorking(false);
-                    });
+                    } else {
+                        // console.error('then error');
+                    }
+
                 } catch (err) {
+                    //logger.error(`'${data.name}' _readValues error! ${reason}`);
                     logger.error(`'${data.name}' polling error: ${err}`);
                     _checkWorking(false);
                 }
@@ -155,7 +155,7 @@ function EthernetIPclient(_data, _logger, _events) {
                 // if (!itemsMap[data.tags[id].address]) {
                 //     itemsMap[data.tags[id].address] = [data.tags[id]];
                 // } else {
-                //     itemsMap[data.tags[id].address].push(data.tags[id]);   
+                //     itemsMap[data.tags[id].address].push(data.tags[id]);
                 // }
             }
             logger.info(`'${data.name}' data loaded (${count})`, true);
@@ -203,9 +203,9 @@ function EthernetIPclient(_data, _logger, _events) {
      * Set the Tag value to device
      * take the address from
      */
-    this.setValue = function (tagId, value) {
+    this.setValue = async function (tagId, value) {
         if (data.tags[tagId]) {
-            let valueToSend = deviceUtils.tagRawCalculator(value, data.tags[tagId]);
+            let valueToSend = await deviceUtils.tagRawCalculator(value, data.tags[tagId], runtime);
             conn.writeItems([data.tags[tagId].address], [parseFloat(valueToSend)], (error) => {
                 if (error) {
                     logger.error(`'${data.tags[tagId].name}' setValue error! ${error}`);
@@ -235,10 +235,28 @@ function EthernetIPclient(_data, _logger, _events) {
 
     /**
      * Return the timestamp of last read tag operation on polling
-     * @returns 
+     * @returns
      */
      this.lastReadTimestamp = () => {
         return lastTimestampValue;
+    }
+
+    /**
+     * Return the Daq settings of Tag
+     * @returns
+     */
+    this.getTagDaqSettings = (tagId) => {
+        return data.tags[tagId] ? data.tags[tagId].daq : null;
+    }
+
+    /**
+     * Set Daq settings of Tag
+     * @returns
+     */
+    this.setTagDaqSettings = (tagId, settings) => {
+        if (data.tags[tagId]) {
+            utils.mergeObjectsValues(data.tags[tagId].daq, settings);
+        }
     }
 
     /**
@@ -269,24 +287,24 @@ function EthernetIPclient(_data, _logger, _events) {
 
     /**
      * Update the Tags values read
-     * @param {*} vars 
+     * @param {*} vars
      */
-    var _updateVarsValue = (vars) => {
+    var _updateVarsValue = async (vars) => {
         const timestamp = new Date().getTime();
         var changed = {};
-        Object.keys(itemsMap).forEach(key => {
+        for (const [key, value] of Object.entries(itemsMap)) {
             if (!utils.isNullOrUndefined(vars[key])) {
                 var id = itemsMap[key].id;
                 var valueChanged = itemsMap[key].value !== vars[key];
                 itemsMap[key].rawValue = vars[key];
-                itemsMap[key].value = deviceUtils.tagValueCompose(vars[key], itemsMap[key]);
+                itemsMap[key].value = await deviceUtils.tagValueCompose(vars[key], varsValue[id] ? varsValue[id].value : null, itemsMap[key], runtime);
                 varsValue[id] = { id: id, value: itemsMap[key].value, type: itemsMap[key].type, daq: itemsMap[key].daq, changed: valueChanged, timestamp: timestamp };
                 if (this.addDaq && deviceUtils.tagDaqToSave(varsValue[id], timestamp)) {
                     changed[id] = varsValue[id];
                 }
                 varsValue[id].changed = false;
             }
-        });
+        };
         return changed;
     }
 
@@ -314,16 +332,16 @@ function EthernetIPclient(_data, _logger, _events) {
 
     /**
      * Emit the PLC connection status
-     * @param {*} status 
+     * @param {*} status
      */
     var _emitStatus = function (status) {
         lastStatus = status;
         events.emit('device-status:changed', { id: data.id, status: status });
     }
-    
+
     /**
      * Emit the webapi Tags values array { id: <name>, value: <value>, type: <type> }
-     * @param {*} values 
+     * @param {*} values
      */
     var _emitValues = function (values) {
         events.emit('device-value:changed', { id: data.id, values: values });
@@ -331,7 +349,7 @@ function EthernetIPclient(_data, _logger, _events) {
 
     /**
      * Used to manage the async connection and polling automation (that not overloading)
-     * @param {*} check 
+     * @param {*} check
      */
     var _checkWorking = function (check) {
         if (check && working) {
@@ -353,11 +371,11 @@ function EthernetIPclient(_data, _logger, _events) {
 module.exports = {
     init: function (settings) {
     },
-    create: function (data, logger, events, manager) {
+    create: function (data, logger, events, manager, runtime) {
         // To use with plugin
         try { EthernetIp = require('nodepccc'); } catch { }
         if (!EthernetIp && manager) { try { EthernetIp = manager.require('nodepccc'); } catch { } }
         if (!EthernetIp) return null;
-        return new EthernetIPclient(data, logger, events);
+        return new EthernetIPclient(data, logger, events, runtime);
     }
 }

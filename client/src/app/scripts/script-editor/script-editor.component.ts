@@ -1,23 +1,24 @@
 /* eslint-disable @angular-eslint/component-class-suffix */
 import { Component, OnInit, Inject, ViewChild, OnDestroy } from '@angular/core';
-import { MatDialog, MatDialogRef, MAT_DIALOG_DATA } from '@angular/material/dialog';
+import { MatLegacyDialog as MatDialog, MatLegacyDialogRef as MatDialogRef, MAT_LEGACY_DIALOG_DATA as MAT_DIALOG_DATA } from '@angular/material/legacy-dialog';
 import { CodemirrorComponent } from '@ctrl/ngx-codemirror';
 import { ChangeDetectorRef } from '@angular/core';
-import { Subscription } from 'rxjs';
+import { Subject, takeUntil } from 'rxjs';
 
 import { HmiService } from '../../_services/hmi.service';
 import { ScriptService } from '../../_services/script.service';
 import { EditNameComponent } from '../../gui-helpers/edit-name/edit-name.component';
 import { TranslateService } from '@ngx-translate/core';
 import { Utils } from '../../_helpers/utils';
-import { DeviceTagDialog } from '../../device/device.component';
-import { ScriptParamType, Script, ScriptTest, SCRIPT_PREFIX, SystemFunctions, SystemFunction, ScriptParam, ScriptConsoleMessage } from '../../_models/script';
+import { ScriptParamType, Script, ScriptTest, SCRIPT_PREFIX, SystemFunctions, SystemFunction, ScriptParam, ScriptConsoleMessage, TemplatesCode, ScriptMode, ScriptParamFilterType } from '../../_models/script';
 import { DevicesUtils, DeviceType } from '../../_models/device';
+import { DeviceTagSelectionComponent, DeviceTagSelectionData } from '../../device/device-tag-selection/device-tag-selection.component';
+import { ScriptEditorParamComponent } from './script-editor-param/script-editor-param.component';
 
 @Component({
     selector: 'app-script-editor',
     templateUrl: './script-editor.component.html',
-    styleUrls: ['./script-editor.component.css']
+    styleUrls: ['./script-editor.component.scss']
 })
 export class ScriptEditorComponent implements OnInit, OnDestroy {
     @ViewChild(CodemirrorComponent, {static: false}) CodeMirror: CodemirrorComponent;
@@ -33,8 +34,10 @@ export class ScriptEditorComponent implements OnInit, OnDestroy {
         // lint: {options: {esversion: 2021}},
         lint: true,
     };
-    systemFunctions = new SystemFunctions();
-    checkSystemFnc = this.systemFunctions.functions.map(sf => sf.name);
+    systemFunctions: SystemFunctions;
+    templatesCode: TemplatesCode;
+
+    checkSystemFnc: string[] = [];
     parameters: ScriptParam[] = [];
     testParameters: ScriptParam[] = [];
     tagParamType = Utils.getEnumKey(ScriptParamType, ScriptParamType.tagid);
@@ -43,7 +46,7 @@ export class ScriptEditorComponent implements OnInit, OnDestroy {
     script: Script;
     msgRemoveScript = '';
     ready = false;
-    private subscriptionScriptConsole: Subscription;
+    private destroy$ = new Subject<void>();
 
     constructor(public dialogRef: MatDialogRef<ScriptEditorComponent>,
         public dialog: MatDialog,
@@ -53,8 +56,11 @@ export class ScriptEditorComponent implements OnInit, OnDestroy {
         private scriptService: ScriptService,
         @Inject(MAT_DIALOG_DATA) public data: any) {
             this.script = data.script;
-            this.dialogRef.afterOpened().subscribe(() => setTimeout(() => {this.ready = true; this.setCM();}, 0));
-        }
+        this.dialogRef.afterOpened().subscribe(() => setTimeout(() => {this.ready = true; this.setCM();}, 0));
+        this.systemFunctions = new SystemFunctions(this.script.mode);
+        this.templatesCode = new TemplatesCode(this.script.mode);
+        this.checkSystemFnc = this.systemFunctions.functions.map(sf => sf.name);
+    }
 
     ngOnInit() {
         if (!this.script) {
@@ -67,20 +73,21 @@ export class ScriptEditorComponent implements OnInit, OnDestroy {
             this.translateService.get(fnc.text).subscribe((txt: string) => { fnc.text = txt; });
             this.translateService.get(fnc.tooltip).subscribe((txt: string) => { fnc.tooltip = txt; });
         });
-        this.subscriptionScriptConsole = this.hmiService.onScriptConsole.subscribe((scriptConsole: ScriptConsoleMessage) => {
+        this.templatesCode.functions.forEach(fnc => {
+            fnc.text = this.translateService.instant(fnc.text);
+            fnc.tooltip = this.translateService.instant(fnc.tooltip);
+        });
+        this.hmiService.onScriptConsole.pipe(
+            takeUntil(this.destroy$)
+        ).subscribe((scriptConsole: ScriptConsoleMessage) => {
             this.console.push(scriptConsole.msg);
         });
         this.loadTestParameter();
     }
 
     ngOnDestroy() {
-        try {
-            if (this.subscriptionScriptConsole) {
-                this.subscriptionScriptConsole.unsubscribe();
-            }
-        } catch (e) {
-            console.error(e);
-        }
+        this.destroy$.next();
+        this.destroy$.complete();
     }
 
     setCM() {
@@ -128,6 +135,7 @@ export class ScriptEditorComponent implements OnInit, OnDestroy {
         this.translateService.get(label).subscribe((txt: string) => { label = txt; });
         this.translateService.get(error).subscribe((txt: string) => { error = txt; });
         let dialogRef = this.dialog.open(EditNameComponent, {
+            disableClose: true,
             position: { top: '60px' },
             data: { name: this.script.name, title: title, label: label, exist: exist, error: error, validator: this.validateName }
         });
@@ -141,7 +149,8 @@ export class ScriptEditorComponent implements OnInit, OnDestroy {
     onAddFunctionParam() {
         let error = 'dlg.item-name-error';
         let exist = this.parameters.map(p => p.name);
-        let dialogRef = this.dialog.open(DialogScriptParam, {
+        let dialogRef = this.dialog.open(ScriptEditorParamComponent, {
+            disableClose: true,
             position: { top: '60px' },
             data: { name: '', exist: exist, error: error, validator: this.validateName  }
         });
@@ -164,39 +173,56 @@ export class ScriptEditorComponent implements OnInit, OnDestroy {
     }
 
     onAddSystemFunction(sysfnc: SystemFunction) {
-        if (sysfnc.params.filter((value) => value).length === 1) {
+        if (sysfnc.params.filter((value) => value)?.length) {
             this.onAddSystemFunctionTag(sysfnc);
         } else {
             this.insertText(this.getFunctionText(sysfnc));
         }
     }
 
+    onAddTemplateCode(tmpfnc: SystemFunction) {
+        if (tmpfnc.code) {
+            this.insertText(tmpfnc.code);
+        }
+    }
+
     onAddSystemFunctionTag(sysfnc: SystemFunction) {
-        let dialogRef = this.dialog.open(DeviceTagDialog, {
+        const withMultTagsParam = sysfnc.params?.find(p => p === 'array');
+        let dialogRef = this.dialog.open(DeviceTagSelectionComponent, {
+            disableClose: true,
             position: { top: '60px' },
-            data: {
+            data: <DeviceTagSelectionData> {
                 variableId: null,
-                devices: this.data.devices,
-                multiSelection: false,
-                deviceFilter: [ DeviceType.internal ]
+                multiSelection:  withMultTagsParam ? true : false,
+                deviceFilter: [ this.script.mode === ScriptMode.SERVER ? DeviceType.internal : null ],
+                isHistorical: sysfnc.paramFilter === ScriptParamFilterType.history
             }
         });
 
         dialogRef.afterClosed().subscribe((result) => {
-            if (result && result.variableId) {
-                let tag = { id: result.variableId, comment: DevicesUtils.getDeviceTagText(this.data.devices, result.variableId) };
-                let text = this.getTagFunctionText(sysfnc, [tag]);
+            if (result) {
+                let text;
+                if (withMultTagsParam && result.variablesId) {
+                    const tags = result.variablesId.map(varId => <ScriptParamCommentType> {
+                        id: varId,
+                        comment: DevicesUtils.getDeviceTagText(this.data.devices, varId)
+                    });
+                    text = this.getTagFunctionText(sysfnc, tags);
+                } else if (result.variableId) {
+                    const tag = { id: result.variableId, comment: DevicesUtils.getDeviceTagText(this.data.devices, result.variableId) };
+                    text = this.getTagFunctionText(sysfnc, [tag]);
+                }
                 this.insertText(text);
             }
         });
     }
 
     onSetTestTagParam(param: ScriptParam) {
-        let dialogRef = this.dialog.open(DeviceTagDialog, {
+        let dialogRef = this.dialog.open(DeviceTagSelectionComponent, {
+            disableClose: true,
             position: { top: '60px' },
-            data: {
+            data: <DeviceTagSelectionData> {
                 variableId: null,
-                devices: this.data.devices,
                 multiSelection: false,
                 deviceFilter: [ DeviceType.internal ]
             }
@@ -215,10 +241,17 @@ export class ScriptEditorComponent implements OnInit, OnDestroy {
         torun.outputId = this.script.id;
         torun.code = this.script.code;
         this.scriptService.runScript(torun).subscribe(result => {
-
+            this.console.push(JSON.stringify(result));
         }, err => {
             this.console.push((err.message) ? err.message : err);
+            if (err.error) {
+                this.console.push((err.error.message) ? err.error.message : err.error);
+            }
         });
+    }
+
+    toggleSync() {
+        this.script.sync = !this.script.sync;
     }
 
     onConsoleClear() {
@@ -236,25 +269,32 @@ export class ScriptEditorComponent implements OnInit, OnDestroy {
         doc.replaceRange(text, cursor);
     }
 
-    private getTagFunctionText(sysfnc: SystemFunction, params: any[]): string {
+    private getTagFunctionText(sysfnc: SystemFunction, params: ScriptParamCommentType[]): string {
         let paramText = '';
         for (let i = 0; i < sysfnc.params.length; i++) {
             if (paramText.length) {     // parameters separator
                 paramText += ', ';
             }
-            if (sysfnc.params[i] && params[i]) {         // tag ID
-                paramText += `'${params[i].id}' /* ${params[i].comment} */`;
+            let toAdd = '';
+            if (sysfnc.params[i] && params) {
+                if (sysfnc.params[i] === 'array') {
+                    toAdd = '[' + params.map(param => `'${param.id}' /* ${param.comment} */`).join(', ') + ']';
+                } else if (params[i]) {         // tag ID
+                    toAdd = `'${params[i].id}' /* ${params[i].comment} */`;
+                }
             } else {
-                paramText += '';
             }
+            paramText += toAdd;
         }
         return `${sysfnc.name}(${paramText});`;
     }
 
     private getFunctionText(sysfnc: SystemFunction): string {
-        let paramText = '\'MainView\'';
+        let paramText = '\'params\'';
         const fx = this.systemFunctions.functions.find(sf => sf.name === sysfnc.name);
-        if (fx && fx.paramsText) {
+        if (!fx?.params?.length) {
+            paramText = '';
+        } else if (fx?.paramsText) {
             paramText = this.translateService.instant(fx.paramsText) || paramText;
         }
         return `${sysfnc.name}(${paramText});`;
@@ -273,42 +313,7 @@ export class ScriptEditorComponent implements OnInit, OnDestroy {
     }
 }
 
-@Component({
-    selector: 'dlg-sript-param',
-    templateUrl: 'param.dialog.html',
-})
-export class DialogScriptParam {
-    error = '';
-    existError = 'script.param-name-exist';
-    paramType = ScriptParamType;
-    constructor(public dialogRef: MatDialogRef<DialogScriptParam>,
-        private translateService: TranslateService,
-        @Inject(MAT_DIALOG_DATA) public data: any) {
-        Object.keys(this.paramType).forEach(key => {
-            this.translateService.get(this.paramType[key]).subscribe((txt: string) => {this.paramType[key] = txt;});
-        });
-        this.translateService.get(this.existError).subscribe((txt: string) => {this.existError = txt;});
-    }
-
-    onNoClick(): void {
-        this.dialogRef.close();
-
-    }
-
-    isValid(name): boolean {
-        if (this.data.validator && !this.data.validator(name)) {return false;}
-        if (!this.data.type) {return false;}
-        if (!this.data.name) {return false;}
-        return (this.data.exist.find((n) => n === name)) ? false : true;
-    }
-
-    onCheckValue(input: any) {
-        if (this.data.exist && this.data.exist.length && input.target.value) {
-            if (this.data.exist.find((n) => n === input.target.value)) {
-                this.error = this.existError;
-                return;
-            }
-        }
-        this.error = '';
-    }
+interface ScriptParamCommentType {
+    id: string;
+    comment: string;
 }

@@ -26,6 +26,8 @@ var notificatorMgr;
 var scriptsMgr;
 var jobsMgr;
 var tagsSubscription = new Map();
+var socketPool = new Map();
+var socketMutex = new Map();
 
 function init(_io, _api, _settings, _log, eventsMain) {
     io = _io;
@@ -60,7 +62,7 @@ function init(_io, _api, _settings, _log, eventsMain) {
         logger.error('runtime.failed-to-init users');
     });
 
-    project.init(settings, logger).then(result => {
+    project.init(settings, logger, runtime).then(result => {
         logger.info('runtime init project successful!', true);
         events.emit('init-project-ok');
     }).catch(function (err) {
@@ -80,7 +82,7 @@ function init(_io, _api, _settings, _log, eventsMain) {
     events.on('script-console', scriptConsoleOutput);
 
     io.on('connection', async (socket) => {
-        logger.info(`socket.io client connected`);        
+        logger.info(`socket.io client connected`);
         socket.tagsClientSubscriptions = [];
         // check authorizations
         if (settings.secureEnabled && !settings.secureOnlyEditor) {
@@ -143,7 +145,6 @@ function init(_io, _api, _settings, _log, eventsMain) {
                     }
                 } else if (message.cmd === 'set' && message.var) {
                     devices.setDeviceValue(message.var.source, message.var.id, message.var.value, message.fnc);
-                    // logger.info(`${Events.IoEventTypes.DEVICE_VALUES}: ${message.var.source} ${message.var.id} = ${message.var.value}`);
                 }
             } catch (err) {
                 logger.error(`${Events.IoEventTypes.DEVICE_VALUES}: ${err}`);
@@ -154,7 +155,7 @@ function init(_io, _api, _settings, _log, eventsMain) {
             try {
                 if (message) {
                     if (message.device) {
-                        devices.browseDevice(message.device, message.node, function (nodes) { 
+                        devices.browseDevice(message.device, message.node, function (nodes) {
                             io.emit(Events.IoEventTypes.DEVICE_BROWSE, nodes);
                         }).then(result => {
                             message.result = result;
@@ -192,20 +193,33 @@ function init(_io, _api, _settings, _log, eventsMain) {
         socket.on(Events.IoEventTypes.DAQ_QUERY, (msg) => {
             try {
                 if (msg && msg.from && msg.to && msg.sids && msg.sids.length) {
-                    var dbfncs = [];
-                    for (let i = 0; i < msg.sids.length; i++) {
-                        dbfncs.push(daqstorage.getNodeValues(msg.sids[i], msg.from, msg.to));
-                    }
-                    Promise.all(dbfncs).then(values => {
-                        io.emit(Events.IoEventTypes.DAQ_RESULT, { gid: msg.gid, result: values });
-                    }, reason => {
-                        if (reason && reason.stack) {
-                            logger.error(`${Events.IoEventTypes.DAQ_QUERY}: ${reason.stack}`);
-                        } else {
-                            logger.error(`${Events.IoEventTypes.DAQ_QUERY}: ${reason}`);
+                    const TIME_CHUNK_SIZE = 60 * 60 * 1000 * 6; // Dimensione del chunk in millisecondi (ad esempio, 1 ora)
+                    const timeChunks = utils.chunkTimeRange(msg.from, msg.to, msg.chunked ? TIME_CHUNK_SIZE : 0);
+                    const processChunks = async () => {
+                        var counter = 1;
+                        for (const chunk of timeChunks) {
+                            try {
+                                var dbfncs = [];
+                                for (let i = 0; i < msg.sids.length; i++) {
+                                    dbfncs.push(daqstorage.getNodeValues(msg.sids[i], chunk.start, chunk.end));
+                                }
+                                const values = await Promise.all(dbfncs);
+                                io.emit(Events.IoEventTypes.DAQ_RESULT, {
+                                    gid: msg.gid,
+                                    result: values,
+                                    chunk: {
+                                        index: counter++,
+                                        of: timeChunks.length
+                                    }
+                                });
+                            } catch (error) {
+                                logger.error(`${Events.IoEventTypes.DAQ_QUERY}: ${error.stack || error}`);
+                                io.emit(Events.IoEventTypes.DAQ_ERROR, { gid, error });
+                                return;
+                            }
                         }
-                        io.emit(Events.IoEventTypes.DAQ_ERROR, { gid: msg.gid, error: reason });
-                    });
+                    }
+                    processChunks();
                 }
             } catch (err) {
                 logger.error(`${Events.IoEventTypes.DAQ_QUERY}: ${err}`);
@@ -294,7 +308,18 @@ function init(_io, _api, _settings, _log, eventsMain) {
                 logger.error(`${Events.IoEventTypes.DEVICE_TAGS_UNSUBSCRIBE}: ${err}`);
             }
         });
+        socket.on(Events.IoEventTypes.DEVICE_ENABLE, (message) => {
+            try {
+                devices.enableDevice(message.deviceName, message.enable);
+            } catch (err) {
+                logger.error(`${Events.IoEventTypes.DEVICE_ENABLE}: ${err}`);
+            }
+        });
     });
+
+    setInterval(() => {
+        io.emit(Events.IoEventTypes.ALIVE, { message: 'FUXA server is alive!' });
+    }, 10000);
 }
 
 function start() {
@@ -335,7 +360,7 @@ function start() {
             }).catch(function (err) {
                 logger.error('runtime.failed-to-start-jobs: ' + err);
                 reject();
-            });            
+            });
         }).catch(function (err) {
             logger.error('runtime.failed-to-start: ' + err);
             reject();
@@ -364,7 +389,7 @@ function stop() {
         jobsMgr.stop().then(function () {
         }).catch(function (err) {
             logger.error('runtime.failed-to-stop-jobsMgr: ' + err);
-        });        
+        });
         resolve(true);
     });
 }
@@ -452,13 +477,13 @@ function updateDeviceValues(event) {
                 });
                 socket.emit(Events.IoEventTypes.DEVICE_VALUES, {
                     id: event.id,
-                    values: Object.values(tags)
+                    values: tagsToSend(tags)
                 });
             });
         } else {
-            io.emit(Events.IoEventTypes.DEVICE_VALUES, { 
+            io.emit(Events.IoEventTypes.DEVICE_VALUES, {
                 id: event.id,
-                values: Object.values(event.values) 
+                values: tagsToSend(event.values)
             });
         }
         tagsSubscription.forEach((key, value) => {
@@ -468,6 +493,14 @@ function updateDeviceValues(event) {
         });
     } catch (err) {
     }
+}
+
+function tagsToSend(tags) {
+    return Object.values(tags).map(tag => ({
+        id: tag.id,
+        value: tag.value,
+        timestamp: tag.timestamp
+    }));
 }
 
 function subscriptionTagChange(tagid) {
@@ -507,7 +540,7 @@ function updateAlarmsStatus() {
 
 /**
  * Trasmit the scripts console output
- * @param {*} output 
+ * @param {*} output
  */
 function scriptConsoleOutput(output) {
     try {
@@ -526,6 +559,83 @@ function scriptConsoleOutput(output) {
         io.emit(Events.IoEventTypes.SCRIPT_COMMAND, command);
     } catch (err) {
     }
+}
+
+/**
+ *
+ * @param {*} userPermission
+ * @param {*} contextPermission script permission could be permission or permissionRoles
+ * @param {*} type only for Role enabled and first 8 bitmask
+ * @returns true/false
+ */
+function checkPermissionEnabled(userPermission, contextPermission, type) {
+    var admin = (userPermission === -1 || userPermission === 255) ? true : false;
+    if (userPermission.info && userPermission.info.roles) {
+        if (contextPermission[type]) {
+            return userPermission.info.roles.some(role => contextPermission[type].includes(role));
+        }
+    } else if (admin || (st && (!contextPermission || contextPermission & userPermission))) {
+        return true;
+    }
+}
+
+/**
+ * for Role show/enabled or 16 bitmask (0-7 enabled / 8-15 show)
+ * @param {*} userPermission
+ * @param {*} contextPermission permission could be permission or permissionRoles
+ * @param {*} forceUndefined return true if params are undefined/null/0
+ * @returns { show: true/false, enabled: true/false }
+ */
+function checkPermission(userPermission, context, forceUndefined = false) {
+    if (!userPermission && !context) {
+        // No user and No context
+        return { show: forceUndefined || !settings.secureEnabled, enabled: forceUndefined || !settings.secureEnabled };
+    }
+    if (userPermission === -1 || userPermission === 255 || utils.isNullOrUndefined(context)) {
+        // admin
+        return { show: true, enabled: true };
+    }
+    const contextPermission = settings.userRole ? context.permissionRoles : context.permission;
+    if (settings.userRole) {
+        if (userPermission && !contextPermission) {
+            return { show: true, enabled: false };
+        }
+    } else {
+        if (userPermission && !context && !contextPermission) {
+            return { show: true, enabled: false };
+        }
+    }
+    var result = { show: false, enabled : false };
+    if (settings.userRole) {
+        if (userPermission && userPermission.info && userPermission.info.roles) {
+            let voidRole = { show: true, enabled: true };
+            if (contextPermission.show && contextPermission.show.length) {
+                result.show = userPermission.info.roles.some(role => contextPermission.show.includes(role));
+                voidRole.show = false;
+            }
+            if (contextPermission.enabled && contextPermission.enabled.length) {
+                result.enabled = userPermission.info.roles.some(role => contextPermission.enabled.includes(role));
+                voidRole.enabled = false;
+            }
+            if (voidRole.show && voidRole.enabled) {
+                return voidRole;
+            }
+        } else {
+            result.show = contextPermission && contextPermission.show && contextPermission.show.length ? false : true;
+            result.enabled = contextPermission && contextPermission.enabled && contextPermission.enabled.length ? false : true;
+        }
+    } else {
+        if (userPermission) {
+            var mask = (contextPermission >> 8);
+            result.show = (mask) ? mask & userPermission : 1;
+            mask = (contextPermission & 255);
+            result.enabled = (mask) ? mask & userPermission : 1;
+        } else {
+            result.show = contextPermission ? false : true;
+            result.enabled = contextPermission ? false : true;
+        }
+    }
+    return result;
 }
 
 var runtime = module.exports = {
@@ -549,4 +659,8 @@ var runtime = module.exports = {
     get jobsMgr() { return jobsMgr },
     events: events,
     scriptSendCommand: scriptSendCommand,
+    checkPermissionEnabled: checkPermissionEnabled,
+    checkPermission: checkPermission,
+    get socketPool() { return socketPool },
+    get socketMutex() {return socketMutex }
 }

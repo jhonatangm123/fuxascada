@@ -1,6 +1,6 @@
 import { Component, OnInit, AfterViewInit, OnDestroy, ViewChild } from '@angular/core';
-import { MatDialog } from '@angular/material/dialog';
-import { MatTable, MatTableDataSource } from '@angular/material/table';
+import { MatLegacyDialog as MatDialog } from '@angular/material/legacy-dialog';
+import { MatLegacyTable as MatTable, MatLegacyTableDataSource as MatTableDataSource } from '@angular/material/legacy-table';
 import { MatSort } from '@angular/material/sort';
 import { Subscription } from 'rxjs';
 
@@ -8,10 +8,10 @@ import { TranslateService } from '@ngx-translate/core';
 import { ProjectService } from '../../_services/project.service';
 import { ScriptEditorComponent } from '../script-editor/script-editor.component';
 import { ScriptSchedulingComponent, SchedulingData } from '../script-scheduling/script-scheduling.component';
-import { Script, SCRIPT_PREFIX, ScriptScheduling, ScriptSchedulingMode } from '../../_models/script';
+import { Script, SCRIPT_PREFIX, ScriptMode, ScriptScheduling, ScriptSchedulingMode } from '../../_models/script';
 import { Utils } from '../../_helpers/utils';
-import { ScriptPermissionComponent } from '../script-permission/script-permission.component';
-import { ScriptModeComponent } from '../script-mode/script-mode.component';
+import { ScriptPermissionComponent, ScriptPermissionData } from '../script-permission/script-permission.component';
+import { ScriptModeComponent, ScriptModeType } from '../script-mode/script-mode.component';
 
 @Component({
     selector: 'app-script-list',
@@ -54,9 +54,24 @@ export class ScriptListComponent implements OnInit, AfterViewInit, OnDestroy {
     }
 
     onAddScript() {
-        let script = new Script(Utils.getGUID(SCRIPT_PREFIX));
-        script.name = Utils.getNextName('script_', this.dataSource.data.map(s => s.name));
-		this.editScript(script, 1);
+        let dialogRef = this.dialog.open(ScriptModeComponent, {
+            disableClose: true,
+            position: { top: '60px' },
+            data: <ScriptModeType> {
+                mode: ScriptMode.SERVER,
+                name: Utils.getNextName('script_', this.dataSource.data.map(s => s.name)),
+                newScript: true
+            }
+        });
+
+        dialogRef.afterClosed().subscribe(result => {
+            if (result) {
+                let script = new Script(Utils.getGUID(SCRIPT_PREFIX));
+                script.name = result.name;
+                script.mode = result.mode;
+                this.editScript(script, 1);
+            }
+        });
     }
 
     onEditScript(script: Script) {
@@ -73,6 +88,7 @@ export class ScriptListComponent implements OnInit, AfterViewInit, OnDestroy {
 		let mscript: Script = JSON.parse(JSON.stringify(script));
         let dialogRef = this.dialog.open(ScriptEditorComponent, {
             data: { script: mscript, editmode: toAdd, scripts: scripts, devices: Object.values(this.projectService.getDevices()) },
+            disableClose: true,
             width: dlgwidth,
             position: { top: '80px' }
         });
@@ -126,6 +142,7 @@ export class ScriptListComponent implements OnInit, AfterViewInit, OnDestroy {
     onEditScriptScheduling(script: Script) {
         let dialogRef = this.dialog.open(ScriptSchedulingComponent, {
             data: <SchedulingData> { scheduling: script.scheduling },
+            disableClose: true,
             position: { top: '60px' }
         });
         dialogRef.afterClosed().subscribe((result: ScriptScheduling) => {
@@ -141,13 +158,18 @@ export class ScriptListComponent implements OnInit, AfterViewInit, OnDestroy {
     onEditScriptPermission(script: Script) {
         let permission = script.permission;
         let dialogRef = this.dialog.open(ScriptPermissionComponent, {
+            disableClose: true,
             position: { top: '60px' },
-            data: { permission: permission }
+            data: <ScriptPermissionData>{
+                permission: permission,
+                permissionRoles: script.permissionRoles
+            }
         });
 
         dialogRef.afterClosed().subscribe(result => {
             if (result) {
                 script.permission = result.permission;
+                script.permissionRoles = result.permissionRoles;
                 this.projectService.setScript(script, null).subscribe(() => {
                     this.loadScripts();
                 });
@@ -157,6 +179,7 @@ export class ScriptListComponent implements OnInit, AfterViewInit, OnDestroy {
 
     onEditScriptMode(script: Script) {
         let dialogRef = this.dialog.open(ScriptModeComponent, {
+            disableClose: true,
             position: { top: '60px' },
             data: { mode: script.mode }
         });

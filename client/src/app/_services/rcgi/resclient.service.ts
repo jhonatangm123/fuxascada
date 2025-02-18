@@ -5,13 +5,16 @@ import { Observable } from 'rxjs';
 
 import { ProjectData, ProjectDataCmdType, UploadFile } from '../../_models/project';
 import { ResourceStorageService } from './resource-storage.service';
-import { AlarmQuery } from '../../_models/alarm';
+import { AlarmBaseType, AlarmQuery, AlarmsFilter } from '../../_models/alarm';
 import { DaqQuery } from '../../_models/hmi';
 import { CommanType } from '../command.service';
+import { Report, ReportFile, ReportsQuery } from '../../_models/report';
+import { Role } from '../../_models/user';
 
 @Injectable()
 export class ResClientService implements ResourceStorageService {
 
+    endPointConfig = '';
     bridge: any = null;
     id: string = null;
     get isReady() { return (this.bridge) ? true : false; }
@@ -128,13 +131,13 @@ export class ResClientService implements ResourceStorageService {
         });
     }
 
-    getAlarmsValues(): Observable<any> {
+    getAlarmsValues(alarmFilter?: AlarmsFilter): Observable<AlarmBaseType[]> {
         return new Observable((observer) => {
             observer.error('Not supported!');
         });
     }
 
-    getAlarmsHistory(query: AlarmQuery): Observable<any> {
+    getAlarmsHistory(query: AlarmQuery): Observable<AlarmBaseType[]> {
         return new Observable((observer) => {
             observer.error('Not supported!');
         });
@@ -162,6 +165,18 @@ export class ResClientService implements ResourceStorageService {
         });
     }
 
+    getTagsValues(query: string[]): Observable<any> {
+        return new Observable((observer) => {
+            observer.error('Not supported!');
+        });
+    }
+
+    runSysFunction(functionName: string, params?: any): Observable<any> {
+        return new Observable((observer) => {
+            observer.error('Not supported!');
+        });
+    }
+
     heartbeat(activity: boolean): Observable<any> {
         return new Observable(observer => {
             observer.error('Not supported!');
@@ -169,6 +184,48 @@ export class ResClientService implements ResourceStorageService {
     }
 
     downloadFile(fileName: string, type: CommanType): Observable<Blob> {
+        return new Observable(observer => {
+            observer.error('Not supported!');
+        });
+    }
+
+    getReportsDir(report: Report): Observable<string[]> {
+        return new Observable(observer => {
+            observer.error('Not supported!');
+        });
+    }
+
+    getReportsQuery(query: ReportsQuery): Observable<ReportFile[]> {
+        return new Observable(observer => {
+            observer.error('Not supported!');
+        });
+    }
+
+    getRoles(): Observable<Role[]> {
+        return new Observable(observer => {
+            observer.error('Not supported!');
+        });
+    }
+
+    setRoles(roles: Role[]): Observable<any> {
+        return new Observable(observer => {
+            observer.error('Not supported!');
+        });
+    }
+
+    removeRoles(roles: Role[]): Observable<any> {
+        return new Observable(observer => {
+            observer.error('Not supported!');
+        });
+    }
+
+    buildReport(report: Report): Observable<void> {
+        return new Observable(observer => {
+            observer.error('Not supported!');
+        });
+    }
+
+    removeReportFile(fileName: string): Observable<void> {
         return new Observable(observer => {
             observer.error('Not supported!');
         });

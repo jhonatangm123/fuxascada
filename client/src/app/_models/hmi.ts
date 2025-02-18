@@ -1,4 +1,6 @@
+import { GridType } from 'angular-gridster2';
 import { Device, DeviceType, Tag } from './device';
+import { WidgetPropertyVariable } from '../_helpers/svg-utils';
 
 export class Hmi {
     /** Layout for navigation menu, header bar, ...  */
@@ -22,11 +24,19 @@ export class View {
     svgcontent = '';
     /** Type of view SVG/CARDS */
     type: ViewType;
+    /** Property with events of view like Open or Close */
+    property: ViewProperty;
+
+    constructor(id?: string, type?: ViewType, name?: string) {
+        this.id = id;
+        this.name = name;
+        this.type = type;
+    }
 }
 
 export enum ViewType {
-    svg = 'editor.view-svg',
-    cards ='editor.view-cards'
+    svg = 'svg',
+    cards ='cards'
 }
 
 export class LayoutSettings {
@@ -50,8 +60,12 @@ export class LayoutSettings {
     theme = '';
     /** Show login by start */
     loginonstart?: boolean = false;
+    /** Overlay color for login modal */
+    loginoverlaycolor?: LoginOverlayColorType = LoginOverlayColorType.none;
     /** Show connection error toast */
     show_connection_error? = true;
+    /** Customs Css Styles */
+    customStyles = '';
 }
 
 export class NavigationSettings {
@@ -71,6 +85,12 @@ export class NavigationSettings {
         this.mode = Object.keys(NaviModeType).find(key => NaviModeType[key] === NaviModeType.over) as NaviModeType;
         this.type = Object.keys(NaviItemType).find(key => NaviItemType[key] === NaviItemType.block) as NaviItemType;
     }
+}
+
+export enum LoginOverlayColorType {
+    none = 'none',
+    black = 'black',
+    white = 'white',
 }
 
 export enum NaviModeType {
@@ -94,6 +114,7 @@ export class NaviItem {
     icon: string;
     image: string;
     permission: number;
+    permissionRoles: PermissionRoles;
 }
 
 export class HeaderSettings {
@@ -107,6 +128,7 @@ export class HeaderSettings {
     items: HeaderItem[];
     itemsAnchor: AnchorType = 'left';
     loginInfo: LoginInfoType;
+    dateTimeDisplay: string;
 }
 
 export interface HeaderItem {
@@ -158,6 +180,13 @@ export class DocProfile {
     height = 768;
     bkcolor = '#ffffffff';
     margin = 10;
+    align = DocAlignType.topCenter;
+    gridType: GridType = GridType.Fixed;
+}
+
+export enum DocAlignType {
+    topCenter = 'topCenter',
+    middleCenter ='middleCenter'
 }
 
 export class GaugeSettings {
@@ -168,17 +197,33 @@ export class GaugeSettings {
     }
 }
 
+export class ViewProperty {
+    events: GaugeEvent[] = [];
+}
 export class GaugeProperty {
     variableId: string;
     variableValue: string;
     bitmask: number;
     permission: number;
+    permissionRoles: PermissionRoles;
     ranges: GaugeRangeProperty[];
     events: GaugeEvent[] = [];
     actions: GaugeAction[] = [];
     options: any;
     readonly: boolean;
     text: string;               // Text property (used by button)
+}
+
+export interface PermissionRoles {
+    show: string[];
+    enabled: string[];
+}
+
+export class WidgetProperty extends GaugeProperty {
+    type: string;
+    scriptContent?: { moduleId: string, content: string };
+    svgContent?: string;
+    varsToBind?: { [key: string]: WidgetPropertyVariable } = {};
 }
 
 export interface InputOptionsProperty {
@@ -189,6 +234,9 @@ export interface InputOptionsProperty {
     type?: InputOptionType;
     timeformat?: InputTimeFormatType;
     convertion?: InputConvertionType;
+    updatedEsc?: boolean;
+    selectOnClick?: boolean;
+    actionOnEsc?: InputActionEscType;
 }
 
 export enum InputOptionType {
@@ -210,6 +258,11 @@ export enum InputConvertionType {
     string = 'string',
 }
 
+export enum InputActionEscType {
+    update = 'update',
+    enter = 'enter'
+}
+
 export interface IPropertyVariable {
     /** Tag id */
     variableId: string;
@@ -221,6 +274,13 @@ export interface IPropertyVariable {
     variableRaw: Tag;
 }
 export class GaugeEvent {
+    type: string;
+    action: string;
+    actparam: string;
+    actoptions = <any>{};
+}
+
+export class ViewEvent {
     type: string;
     action: string;
     actparam: string;
@@ -236,7 +296,8 @@ export enum GaugeActionsType {
     anticlockwise = 'shapes.action-anticlockwise',
     downup = 'shapes.action-downup',
     rotate = 'shapes.action-rotate',
-    move = 'shapes.action-move'
+    move = 'shapes.action-move',
+    monitor = 'shapes.action-monitor',
 }
 
 export class GaugeAction {
@@ -280,9 +341,9 @@ export class GaugeStatus {
 
 export class GaugeActionStatus {
     type: string;
-    timer: any = null;
-    animr: any = null;
-    spool: any;
+    timer?: any = null;
+    animr?: any = null;
+    spool?: any;
     constructor(type: string) {
         this.type = type;
     }
@@ -291,15 +352,20 @@ export class GaugeActionStatus {
 /** Gouges and Shapes mouse events */
 export enum GaugeEventType {
     click = 'shapes.event-click',
+    dblclick = 'shapes.event-dblclick',
     mousedown = 'shapes.event-mousedown',
     mouseup = 'shapes.event-mouseup',
+    mouseover = 'shapes.event-mouseover',
+    mouseout = 'shapes.event-mouseout',
     enter = 'shapes.event-enter',
     select = 'shapes.event-select',
+    onLoad = 'shapes.event-onLoad',
 }
 
 export enum GaugeEventActionType {
     onpage = 'shapes.event-onpage',
     onwindow = 'shapes.event-onwindow',
+    onOpenTab = 'shapes.event-onopentab',
     ondialog = 'shapes.event-ondialog',
     oniframe = 'shapes.event-oniframe',
     oncard = 'shapes.event-oncard',     // wrong name exchange with 'onwindow'
@@ -308,6 +374,22 @@ export enum GaugeEventActionType {
     onSetInput = 'shapes.event-onsetinput',
     onclose = 'shapes.event-onclose',
     onRunScript = 'shapes.event-onrunscript',
+    onViewToPanel = 'shapes.event-onViewToPanel',
+    onMonitor = 'shapes.event-onmonitor',
+}
+
+export enum ViewEventType {
+    onopen = 'shapes.event-onopen',
+    onclose = 'shapes.event-onclose'
+}
+
+export enum ViewEventActionType {
+    onRunScript = 'shapes.event-onrunscript',
+}
+
+export enum GaugeEventRelativeFromType {
+    window = 'window',
+    mouse = 'mouse'
 }
 
 export enum GaugeEventSetValueType {
@@ -330,6 +412,7 @@ export interface GaugeChartProperty {
     id: string;
     type: string;
     options: any;
+    events: GaugeEvent[];
 }
 
 export interface GaugeGraphProperty {
@@ -346,17 +429,28 @@ export interface GaugeIframeProperty {
 export interface GaugePanelProperty {
     viewName: string;
     variableId: string;
+    scaleMode: PropertyScaleModeType;
+}
+
+export enum PropertyScaleModeType {
+    none = 'none',
+    contain = 'contain',
+    stretch = 'stretch'
 }
 
 export interface GaugeTableProperty {
     id: string;
     type: TableType;
     options: TableOptions;
+    events: GaugeEvent[];
 }
 
 export enum TableType {
     data = 'data',
     history = 'history',
+    alarms = 'alarms',
+    alarmsHistory = 'alarmsHistory',
+    reports = 'reports',
 }
 
 export interface TableOptions {
@@ -369,6 +463,7 @@ export interface TableOptions {
     daterange: {
         show: boolean;
     };
+    realtime?: boolean;
     lastRange?: TableRangeType;
     gridColor?: string;
     header?: {
@@ -384,8 +479,23 @@ export interface TableOptions {
         color?: string;
         background?: string;
     };
-    columns: TableColumn[];
-    rows: TableRow[];
+    selection?: {
+        fontBold?: boolean;
+        color?: string;
+        background?: string;
+    };
+    columns?: TableColumn[];
+    alarmsColumns?: TableColumn[];
+    alarmFilter: TableFilter;
+    reportsColumns?: TableColumn[];
+    reportFilter: TableFilter;
+    rows?: TableRow[];
+}
+
+export interface TableFilter {
+    filterA: string[];
+    filterB?: string[];
+    filterC?: string[];
 }
 
 export enum TableCellType {
@@ -462,7 +572,6 @@ export class VariableRange {
 }
 
 export class Alarm extends Tag {
-    id: string;
     group: string;
     device: string;
 }
@@ -484,16 +593,18 @@ export class Event {
     dom: any;
     value: any = null;
     dbg = '';
-    type: string;
+    type?: string;
     ga: GaugeSettings;
+    variableId: string;
 }
 
 export class DaqQuery {
-    gid: string;
+    gid?: string;
     from: any;
     to: any;
-    event: string;
+    event?: string;
     sids: string[];
+    chunked?: boolean;
 }
 
 export interface DaqValue {
@@ -505,6 +616,12 @@ export interface DaqValue {
 export class DaqResult {
     gid: string;
     result: any;
+    chunk?: DaqChunkType;
+}
+
+export interface DaqChunkType {
+    index: number;
+    of: number;
 }
 
 export class HelpData {
@@ -521,11 +638,11 @@ export class Size {
     }
 }
 
-interface DictionaryGaugeSettings {
+export interface DictionaryGaugeSettings {
     [x: string]: GaugeSettings;
 }
 
-interface DictionaryVariables {
+export interface DictionaryVariables {
     [id: string]: Variable;
 }
 
@@ -546,6 +663,8 @@ export class CardWidget {
     data: string;
     type: string;
     zoom = 1;
+    scaleMode: PropertyScaleModeType;
+
     constructor(type: string, data: string) {
         this.type = type;
         this.data = data;
@@ -553,10 +672,10 @@ export class CardWidget {
 }
 
 export enum CardWidgetType {
-    view = 'card.widget-view',
-    alarms = 'card.widget-alarms',
-    iframe = 'card.widget-iframe',
-    table = 'card.widget-table',
+    view = 'view',
+    alarms = 'alarms',
+    iframe = 'iframe',
+    table = 'table',
 }
 
 export enum LinkType {

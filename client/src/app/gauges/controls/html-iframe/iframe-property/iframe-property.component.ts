@@ -2,11 +2,12 @@ import { Component, EventEmitter, OnInit, Input, Output } from '@angular/core';
 
 import { TranslateService } from '@ngx-translate/core';
 import { GaugeIframeProperty } from '../../../../_models/hmi';
+import { FlexDeviceTagValueType } from '../../../gauge-property/flex-device-tag/flex-device-tag.component';
 
 @Component({
     selector: 'app-iframe-property',
     templateUrl: './iframe-property.component.html',
-    styleUrls: ['./iframe-property.component.css']
+    styleUrls: ['./iframe-property.component.scss']
 })
 export class IframePropertyComponent implements OnInit {
 
@@ -29,8 +30,8 @@ export class IframePropertyComponent implements OnInit {
         this.onPropChanged.emit(this.data.settings);
     }
 
-    onTagChanged(variableId: string) {
-        this.data.settings.property.variableId = variableId;
+    onTagChanged(daveiceTag: FlexDeviceTagValueType) {
+        this.data.settings.property.variableId = daveiceTag.variableId;
         this.onPropChanged.emit(this.data.settings);
     }
 

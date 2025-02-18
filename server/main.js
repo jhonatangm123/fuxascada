@@ -53,6 +53,12 @@ if (parsedArgs.help) {
 // Define directory
 var rootDir = __dirname;
 var workDir = path.resolve(process.cwd(), '_appdata');
+
+if(process.env.userDir){
+    rootDir = process.env.userDir;
+    workDir = path.resolve(process.env.userDir, '_appdata');
+}
+
 if (parsedArgs.userDir) {
     rootDir = parsedArgs.userDir;
     workDir = path.resolve(parsedArgs.userDir, '_appdata');
@@ -66,7 +72,7 @@ if (!fs.existsSync(workDir)) {
     fs.mkdirSync(workDir);
 }
 
-// Read app settings 
+// Read app settings
 var appSettingsFile = path.join(workDir, 'settings.js');
 if (fs.existsSync(appSettingsFile)) {
     // _appdata/settings.js exists
@@ -92,6 +98,7 @@ try {
     settings.environment = process.env.NODE_ENV || 'prod';
     settings.uploadFileDir = '_upload_files';
     settings.imagesFileDir = path.resolve(rootDir, '_images');
+    settings.widgetsFileDir = path.resolve(rootDir, '_widgets');
     settings.reportsDir = path.resolve(rootDir, '_reports');
 
     // check new settings from default and merge if not defined
@@ -150,6 +157,9 @@ try {
         if (!utils.isNullOrUndefined(mysettings.logFull)) {
             settings.logFull = mysettings.logFull;
         }
+        if (!utils.isNullOrUndefined(mysettings.userRole)) {
+            settings.userRole = mysettings.userRole;
+        }
     }
 } catch (err) {
     logger.error('Error loading user settings file: ' + userSettingsFile)
@@ -157,7 +167,7 @@ try {
 
 // Check logger
 if (!settings.logDir) {
-    settings.logDir = path.resolve(rootDir, '_logs'); 
+    settings.logDir = path.resolve(rootDir, '_logs');
 }
 if (!fs.existsSync(settings.logDir)) {
     fs.mkdirSync(settings.logDir);
@@ -196,6 +206,10 @@ if (!fs.existsSync(settings.uploadFileDir)) {
 if (!fs.existsSync(settings.imagesFileDir)) {
     fs.mkdirSync(settings.imagesFileDir);
 }
+// Check widgets resources folder
+if (!fs.existsSync(settings.widgetsFileDir)) {
+    fs.mkdirSync(settings.widgetsFileDir);
+}
 
 // Server settings
 if (settings.https) {
@@ -220,7 +234,7 @@ if (parsedArgs.port !== undefined){
 }
 settings.uiHost = settings.uiHost || "0.0.0.0";
 
-// Wait ending initialization 
+// Wait ending initialization
 events.once('init-runtime-ok', function () {
     logger.info('FUXA init in  ' + utils.endTime(startTime) + 'ms.');
     startFuxa();
@@ -272,9 +286,10 @@ app.use('/users', express.static(settings.httpStatic));
 app.use('/view', express.static(settings.httpStatic));
 app.use('/' + settings.httpUploadFileStatic, express.static(settings.uploadFileDir));
 app.use('/_images', express.static(settings.imagesFileDir));
+app.use('/_widgets', express.static(settings.widgetsFileDir));
 
 var accessLogStream = fs.createWriteStream(settings.logDir + '/api.log', {flags: 'a'});
-app.use(morgan('combined', { 
+app.use(morgan('combined', {
     stream: accessLogStream,
     skip: function (req, res) { return res.statusCode < 400 }
 }));

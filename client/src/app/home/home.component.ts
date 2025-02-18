@@ -1,8 +1,8 @@
 /* eslint-disable @angular-eslint/component-class-suffix */
 /* eslint-disable @angular-eslint/component-selector */
 import { Component, Inject, OnInit, AfterViewInit, OnDestroy, ViewChild, ChangeDetectorRef, ElementRef } from '@angular/core';
-import { MatDialog, MatDialogRef, MAT_DIALOG_DATA } from '@angular/material/dialog';
-import { combineLatest, Observable, Subject, Subscription } from 'rxjs';
+import { MatLegacyDialog as MatDialog, MatLegacyDialogRef as MatDialogRef, MAT_LEGACY_DIALOG_DATA as MAT_DIALOG_DATA } from '@angular/material/legacy-dialog';
+import { combineLatest, interval, merge, Observable, of, Subject, Subscription, timer } from 'rxjs';
 import { MatSidenav } from '@angular/material/sidenav';
 import { ActivatedRoute, Router } from '@angular/router';
 
@@ -10,11 +10,11 @@ import { SidenavComponent } from '../sidenav/sidenav.component';
 import { FuxaViewComponent } from '../fuxa-view/fuxa-view.component';
 import { CardsViewComponent } from '../cards-view/cards-view.component';
 
-import { HmiService, ScriptSetView } from '../_services/hmi.service';
+import { HmiService, ScriptOpenCard, ScriptSetView } from '../_services/hmi.service';
 import { ProjectService } from '../_services/project.service';
 import { AuthService } from '../_services/auth.service';
 import { GaugesManager } from '../gauges/gauges.component';
-import { Hmi, View, ViewType, NaviModeType, NotificationModeType, ZoomModeType, HeaderSettings, LinkType, HeaderItem, Variable, GaugeStatus, GaugeSettings, GaugeEventType } from '../_models/hmi';
+import { Hmi, View, ViewType, NaviModeType, NotificationModeType, ZoomModeType, HeaderSettings, LinkType, HeaderItem, Variable, GaugeStatus, GaugeSettings, GaugeEventType, LoginOverlayColorType, GaugeEvent } from '../_models/hmi';
 import { LoginComponent } from '../login/login.component';
 import { AlarmViewComponent } from '../alarms/alarm-view/alarm-view.component';
 import { Utils } from '../_helpers/utils';
@@ -24,10 +24,13 @@ import { AlarmStatus, AlarmActionsType } from '../_models/alarm';
 import { GridsterConfig } from 'angular-gridster2';
 
 import panzoom from 'panzoom';
-import { debounceTime, filter, last, map, takeUntil } from 'rxjs/operators';
+import { filter, map, startWith, switchMap, takeUntil } from 'rxjs/operators';
 import { HtmlButtonComponent } from '../gauges/controls/html-button/html-button.component';
 import { User } from '../_models/user';
 import { UserInfo } from '../users/user-edit/user-edit.component';
+import { Intervals } from '../_helpers/intervals';
+import { Script, ScriptMode } from '../_models/script';
+import { ScriptService } from '../_services/script.service';
 // declare var panzoom: any;
 
 @Component({
@@ -65,10 +68,13 @@ export class HomeComponent implements OnInit, AfterViewInit, OnDestroy {
     serverErrorBanner$: Observable<boolean>;
     cardViewType = Utils.getEnumKey(ViewType, ViewType.cards);
     gridOptions = <GridsterConfig>new GridOptions();
+    intervalsScript = new Intervals();
+    currentDateTime: Date = new Date();
     private headerItemsMap = new Map<string, HeaderItem[]>();
     private subscriptionLoad: Subscription;
     private subscriptionAlarmsStatus: Subscription;
     private subscriptiongoTo: Subscription;
+    private subscriptionOpen: Subscription;
     private destroy$ = new Subject<void>();
     loggedUser$: Observable<User>;
 
@@ -78,6 +84,7 @@ export class HomeComponent implements OnInit, AfterViewInit, OnDestroy {
         private router: Router,
         private route: ActivatedRoute,
         private hmiService: HmiService,
+        private scriptService: ScriptService,
         private authService: AuthService,
         public gaugesManager: GaugesManager) {
         this.gridOptions.draggable = { enabled: false };
@@ -86,10 +93,11 @@ export class HomeComponent implements OnInit, AfterViewInit, OnDestroy {
 
     ngOnInit() {
         try {
-            this.subscriptionLoad = this.projectService.onLoadHmi.subscribe(load => {
-                let hmi = this.projectService.getHmi();
-                if (hmi) {
+            this.subscriptionLoad = this.projectService.onLoadHmi.subscribe(() => {
+                if (this.projectService.getHmi()) {
                     this.loadHmi();
+                    this.initScheduledScripts();
+                    this.checkDateTimeTimer();
                 }
             }, error => {
                 console.error(`Error loadHMI: ${error}`);
@@ -100,15 +108,23 @@ export class HomeComponent implements OnInit, AfterViewInit, OnDestroy {
             this.subscriptiongoTo = this.hmiService.onGoTo.subscribe((viewToGo: ScriptSetView) => {
                 this.onGoToPage(this.projectService.getViewId(viewToGo.viewName), viewToGo.force);
             });
+            this.subscriptionOpen = this.hmiService.onOpen.subscribe((viewToOpen: ScriptOpenCard) => {
+                this.fuxaview.onOpenCard(null, null, this.projectService.getViewId(viewToOpen.viewName), viewToOpen.options);
+            });
 
             this.serverErrorBanner$ = combineLatest([
                 this.hmiService.onServerConnection$,
                 this.authService.currentUser$
             ]).pipe(
-                map(([connectionStatus, userProfile]) => (this.securityEnabled && !userProfile) ? false : !connectionStatus),
-                takeUntil(this.destroy$),
-                debounceTime(1000),
-                last()
+                switchMap(([connectionStatus, userProfile]) =>
+                    merge(
+                        of(false),
+                        timer(20000).pipe(map(() => (this.securityEnabled && !userProfile) ? false : true)),
+                    ).pipe (
+                        startWith(false),
+                    )
+                ),
+                takeUntil(this.destroy$)
             );
 
             this.loggedUser$ = this.authService.currentUser$;
@@ -146,20 +162,48 @@ export class HomeComponent implements OnInit, AfterViewInit, OnDestroy {
             if (this.subscriptionAlarmsStatus) {
                 this.subscriptionAlarmsStatus.unsubscribe();
             }
+            if (this.subscriptionOpen) {
+                this.subscriptionOpen.unsubscribe();
+            }
             if (this.subscriptiongoTo) {
                 this.subscriptiongoTo.unsubscribe();
             }
             this.destroy$.next();
             this.destroy$.complete();
+            this.intervalsScript.clearIntervals();
         } catch (e) {
         }
+    }
+
+    private checkDateTimeTimer(): void {
+        if (this.hmi.layout?.header?.dateTimeDisplay) {
+            interval(1000).pipe(
+                takeUntil(this.destroy$)
+            ).subscribe(() => {
+                this.currentDateTime = new Date();
+            });
+        }
+    }
+
+    private initScheduledScripts() {
+        this.intervalsScript.clearIntervals();
+        this.projectService.getScripts()?.forEach((script: Script) => {
+            if (script.mode === ScriptMode.CLIENT && script.scheduling?.interval > 0) {
+                this.intervalsScript.addInterval(
+                    script.scheduling.interval * 1000,
+                    this.scriptService.evalScript,
+                    script,
+                    this.scriptService
+                );
+            }
+        });
     }
 
     onGoToPage(viewId: string, force: boolean = false) {
         if (viewId === this.viewAsAlarms) {
             this.onAlarmsShowMode('expand');
             this.checkToCloseSideNav();
-        } else if (!this.homeView || viewId !== this.homeView?.id || force || this.fuxaview.view?.id !== viewId) {
+        } else if (!this.homeView || viewId !== this.homeView?.id || force || this.fuxaview?.view?.id !== viewId) {
             const view = this.hmi.views.find(x => x.id === viewId);
             this.setIframe();
             this.showHomeLink = false;
@@ -169,6 +213,7 @@ export class HomeComponent implements OnInit, AfterViewInit, OnDestroy {
                 this.changeDetector.detectChanges();
                 this.setBackground();
                 if (this.homeView.type !== this.cardViewType) {
+                    this.checkZoom();
                     this.fuxaview.hmi.layout = this.hmi.layout;
                     this.fuxaview.loadHmi(this.homeView);
                 } else if (this.cardsview) {
@@ -181,7 +226,7 @@ export class HomeComponent implements OnInit, AfterViewInit, OnDestroy {
     }
 
     onGoToLink(event: string) {
-        if (event.indexOf('://') >= 0) {
+        if (event.indexOf('://') >= 0 || event[0] == '/') {
             this.showHomeLink = true;
             this.changeDetector.detectChanges();
             this.setIframe(event);
@@ -246,10 +291,16 @@ export class HomeComponent implements OnInit, AfterViewInit, OnDestroy {
                 }
             });
         } else {
-            let dialogRef = this.dialog.open(LoginComponent, {
+            let dialogConfig = {
                 data: {},
-                disableClose: true
-            });
+                disableClose: true,
+                autoFocus: false,
+                ...(this.hmi.layout.loginoverlaycolor && this.hmi.layout.loginoverlaycolor !== LoginOverlayColorType.none) && {
+                    backdropClass: this.hmi.layout.loginoverlaycolor === LoginOverlayColorType.black ? 'backdrop-black' : 'backdrop-white'
+                }
+            };
+
+            let dialogRef = this.dialog.open(LoginComponent, dialogConfig);
             dialogRef.afterClosed().subscribe(result => {
                 const userInfo = new UserInfo(this.authService.getUser()?.info);
                 if (userInfo.start) {
@@ -360,18 +411,7 @@ export class HomeComponent implements OnInit, AfterViewInit, OnDestroy {
                     this.changeDetector.detectChanges();
                     this.loadHeaderItems();
                 }
-                if (this.hmi.layout.zoom && ZoomModeType[this.hmi.layout.zoom] === ZoomModeType.enabled) {
-                    setTimeout(() => {
-                        let element: HTMLElement = document.querySelector('#home');
-                        if (element && panzoom) {
-                            panzoom(element, {
-                                bounds: true,
-                                boundsPadding: 0.05,
-                            });
-                        }
-                        this.container.nativeElement.style.overflow = 'hidden';
-                    }, 1000);
-                }
+                this.checkZoom();
             }
         }
         if (this.homeView && this.fuxaview) {
@@ -382,6 +422,21 @@ export class HomeComponent implements OnInit, AfterViewInit, OnDestroy {
         this.securityEnabled = this.projectService.isSecurityEnabled();
         if (this.securityEnabled && !this.isLoggedIn() && this.hmi.layout.loginonstart) {
             this.onLogin();
+        }
+    }
+
+    private checkZoom() {
+        if (this.hmi.layout?.zoom && ZoomModeType[this.hmi.layout.zoom] === ZoomModeType.enabled) {
+            setTimeout(() => {
+                let element: HTMLElement = document.querySelector('#home');
+                if (element && panzoom) {
+                    panzoom(element, {
+                        bounds: true,
+                        boundsPadding: 0.05,
+                    });
+                }
+                this.container.nativeElement.style.overflow = 'hidden';
+            }, 1000);
         }
     }
 
@@ -402,10 +457,8 @@ export class HomeComponent implements OnInit, AfterViewInit, OnDestroy {
                 }
                 this.headerItemsMap.get(sigId).push(item);
             });
-            const settingsProperty = <GaugeSettings>{
-                property: item.property,
-                type: HtmlButtonComponent.TypeTag
-            };
+            const settingsProperty = new GaugeSettings(null, HtmlButtonComponent.TypeTag);
+            settingsProperty.property = item.property;
             this.onBindMouseEvents(item.element, settingsProperty);
         });
         this.hmiService.homeTagsSubscribe(Array.from(this.headerItemsMap.keys()));
@@ -414,32 +467,51 @@ export class HomeComponent implements OnInit, AfterViewInit, OnDestroy {
     private onBindMouseEvents(element: HTMLElement, ga: GaugeSettings) {
         if (element) {
             let clickEvents = this.gaugesManager.getBindMouseEvent(ga, GaugeEventType.click);
-            if (clickEvents && clickEvents.length > 0) {
+            if (clickEvents?.length > 0) {
                 element.onclick = (ev: MouseEvent) => {
-                    this.fuxaview.runEvents(this.fuxaview, ga, ev, clickEvents);
+                    this.handleMouseEvent(ga, ev, clickEvents);
                 };
                 element.ontouchstart = (ev) => {
-                    this.fuxaview.runEvents(this.fuxaview, ga, ev, clickEvents);
+                    this.handleMouseEvent(ga, ev, clickEvents);
                 };
 
             }
             let mouseDownEvents = this.gaugesManager.getBindMouseEvent(ga, GaugeEventType.mousedown);
-            if (mouseDownEvents && mouseDownEvents.length > 0) {
+            if (mouseDownEvents?.length > 0) {
                 element.onmousedown = (ev) => {
-                    this.fuxaview.runEvents(this.fuxaview, ga, ev, mouseDownEvents);
+                    this.handleMouseEvent(ga, ev, mouseDownEvents);
                 };
             }
             let mouseUpEvents = this.gaugesManager.getBindMouseEvent(ga, GaugeEventType.mouseup);
-            if (mouseUpEvents && mouseUpEvents.length > 0) {
+            if (mouseUpEvents?.length > 0) {
                 element.onmouseup = (ev) => {
-                    this.fuxaview.runEvents(this.fuxaview, ga, ev, mouseUpEvents);
+                    this.handleMouseEvent(ga, ev, mouseUpEvents);
                 };
             }
         }
     }
 
+    private handleMouseEvent(
+        ga: GaugeSettings,
+        ev: Event,
+        events: GaugeEvent[]
+    ) {
+        let fuxaviewRef = this.fuxaview ?? this.cardsview.getFuxaView(0);
+        if (!fuxaviewRef) {
+            return;
+        }
+        const homeEvents = events.filter(event => event.action === 'onpage');
+        homeEvents.forEach(event => {
+            this.onGoToPage(event.actparam);
+        });
+        const fuxaViewEvents = events.filter(event => event.action !== 'onpage');
+        if (fuxaViewEvents.length > 0) {
+            fuxaviewRef.runEvents(fuxaviewRef, ga, ev, events);
+        }
+    }
+
     private setBackground() {
-        if (this.homeView && this.homeView.profile) {
+        if (this.homeView?.profile) {
             this.backgroudColor = this.homeView.profile.bkcolor;
         }
     }

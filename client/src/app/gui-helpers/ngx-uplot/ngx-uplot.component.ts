@@ -3,6 +3,7 @@ import { Component, OnInit, OnDestroy, ElementRef, ViewChild, Input } from '@ang
 import { Utils } from '../../_helpers/utils';
 
 import { Series, Options, Legend } from './uPlot';
+import { ChartLineZone } from '../../_models/chart';
 
 declare const uPlot: any;
 declare const placement: any;
@@ -26,11 +27,12 @@ export class NgxUplotComponent implements OnInit, OnDestroy {
         spline: 3,
     };
 
+    rawData = false;
     overlay: any;
     uplot: any;
     data: number[][];
-    xtime = [new Date().getTime() / 1000 - 1, new Date().getTime() / 1000];     // start and sample x time
-    sampleData = [this.xtime, [35, 71]];
+    get xSample() { return this.rawData ? [2, 7] : [new Date().getTime() / 1000 - 1, new Date().getTime() / 1000]; };     // start and sample x time
+    sampleData = [this.xSample, [35, 71]];
 
     private getShortTimeFormat(min: boolean = true) {
         if (this.options && this.options.timeFormat === 'hh_mm_ss_AA') {
@@ -55,7 +57,7 @@ export class NgxUplotComponent implements OnInit, OnDestroy {
                     [86400, '{DD}/{MM}', '\n{YYYY}', null, null, null, null, null, 1],
                     [3600, '' + this.getShortTimeFormat(false), '\n{YYYY}/{MM}/{DD}', null, '\n{DD}/{MM}', null, null, null, 1],
                     [60, '' + this.getShortTimeFormat(), '\n{YYYY}/{MM}/{DD}', null, '\n{DD}/{MM}', null, null, null, 1],
-                    [1, ':{ss}', '\n{YYYY}/{MM}/{DD} ' + this.getShortTimeFormat(), null, '\n{DD}/{MM} ' + this.getShortTimeFormat(), null, '\n' + this.getShortTimeFormat(), null, 1],
+                    [1, '{mm}:{ss}', '\n{YYYY}/{MM}/{DD} ' + this.getShortTimeFormat(), null, '\n{DD}/{MM} ' + this.getShortTimeFormat(), null, '\n' + this.getShortTimeFormat(), null, 1],
                     [0.001, ':{ss}.{fff}', '\n{YYYY}/{MM}/{DD} ' + this.getShortTimeFormat(), null, '\n{DD}/{MM} ' + this.getShortTimeFormat(), null, '\n' + this.getShortTimeFormat(), null, 1]]
             },
             MM_DD_YYYY: {
@@ -67,7 +69,7 @@ export class NgxUplotComponent implements OnInit, OnDestroy {
                     [86400, '{MM}/{DD}', '\n{YYYY}', null, null, null, null, null, 1],
                     [3600, '' + this.getShortTimeFormat(false), '\n{MM}/{DD}/{YYYY}', null, '\n{MM}/{DD}', null, null, null, 1],
                     [60, '' + this.getShortTimeFormat(), '\n{MM}/{DD}/{YYYY}', null, '\n{MM}/{DD}', null, null, null, 1],
-                    [1, ':{ss}', '\n{MM}/{DD}/{YYYY} ' + this.getShortTimeFormat(), null, '\n{MM}/{DD} ' + this.getShortTimeFormat(), null, '\n' + this.getShortTimeFormat(), null, 1],
+                    [1, '{mm}:{ss}', '\n{MM}/{DD}/{YYYY} ' + this.getShortTimeFormat(), null, '\n{MM}/{DD} ' + this.getShortTimeFormat(), null, '\n' + this.getShortTimeFormat(), null, 1],
                     [0.001, ':{ss}.{fff}', '\n{MM}/{DD}/{YYYY} ' + this.getShortTimeFormat(), null, '\n{MM}/{DD} ' + this.getShortTimeFormat(), null, '\n' + this.getShortTimeFormat(), null, 1]]
             },
             DD_MM_YYYY: {
@@ -79,7 +81,7 @@ export class NgxUplotComponent implements OnInit, OnDestroy {
                     [86400, '{DD}/{MM}', '\n{YYYY}', null, null, null, null, null, 1],
                     [3600, '' + this.getShortTimeFormat(false), '\n{DD}/{MM}/{YYYY}', null, '\n{DD}/{MM}', null, null, null, 1],
                     [60, '' + this.getShortTimeFormat(), '\n{DD}/{MM}/{YYYY}', null, '\n{DD}/{MM}', null, null, null, 1],
-                    [1, ':{ss}', '\n{DD}/{MM}/{YYYY} ' + this.getShortTimeFormat(), null, '\n{DD}/{MM} ' + this.getShortTimeFormat(), null, '\n' + this.getShortTimeFormat(), null, 1],
+                    [1, '{mm}:{ss}', '\n{DD}/{MM}/{YYYY} ' + this.getShortTimeFormat(), null, '\n{DD}/{MM} ' + this.getShortTimeFormat(), null, '\n' + this.getShortTimeFormat(), null, 1],
                     [0.001, ':{ss}.{fff}', '\n{DD}/{MM}/{YYYY} ' + this.getShortTimeFormat(), null, '\n{DD}/{MM} ' + this.getShortTimeFormat(), null, '\n' + this.getShortTimeFormat(), null, 1]]
             },
             MM_DD_YY: {
@@ -91,7 +93,7 @@ export class NgxUplotComponent implements OnInit, OnDestroy {
                     [86400, '{MM}/{DD}', '\n{YYYY}', null, null, null, null, null, 1],
                     [3600, '' + this.getShortTimeFormat(false), '\n{MM}/{DD}/{YY}', null, '\n{MM}/{DD}', null, null, null, 1],
                     [60, '' + this.getShortTimeFormat(), '\n{MM}/{DD}/{YY}', null, '\n{MM}/{DD}', null, null, null, 1],
-                    [1, ':{ss}', '\n{MM}/{DD}/{YY} ' + this.getShortTimeFormat(), null, '\n{MM}/{DD} ' + this.getShortTimeFormat(), null, '\n' + this.getShortTimeFormat(), null, 1],
+                    [1, '{mm}:{ss}', '\n{MM}/{DD}/{YY} ' + this.getShortTimeFormat(), null, '\n{MM}/{DD} ' + this.getShortTimeFormat(), null, '\n' + this.getShortTimeFormat(), null, 1],
                     [0.001, ':{ss}.{fff}', '\n{MM}/{DD}/{YY} ' + this.getShortTimeFormat(), null, '\n{MM}/{DD} ' + this.getShortTimeFormat(), null, '\n' + this.getShortTimeFormat(), null, 1]]
             },
             DD_MM_YY: {
@@ -103,7 +105,7 @@ export class NgxUplotComponent implements OnInit, OnDestroy {
                     [86400, '{DD}/{MM}', '\n{YYYY}', null, null, null, null, null, 1],
                     [3600, '' + this.getShortTimeFormat(false), '\n{DD}/{MM}/{YY}', null, '\n{DD}/{MM}', null, null, null, 1],
                     [60, '' + this.getShortTimeFormat(), '\n{DD}/{MM}/{YY}', null, '\n{DD}/{MM}', null, null, null, 1],
-                    [1, ':{ss}', '\n{DD}/{MM}/{YY} ' + this.getShortTimeFormat(), null, '\n{DD}/{MM} ' + this.getShortTimeFormat(), null, '\n' + this.getShortTimeFormat(), null, 1],
+                    [1, '{mm}:{ss}', '\n{DD}/{MM}/{YY} ' + this.getShortTimeFormat(), null, '\n{DD}/{MM} ' + this.getShortTimeFormat(), null, '\n' + this.getShortTimeFormat(), null, 1],
                     [0.001, ':{ss}.{fff}', '\n{DD}/{MM}/{YY} ' + this.getShortTimeFormat(), null, '\n{DD}/{MM} ' + this.getShortTimeFormat(), null, '\n' + this.getShortTimeFormat(), null, 1]]
             },
         };
@@ -121,7 +123,7 @@ export class NgxUplotComponent implements OnInit, OnDestroy {
             spanGaps: false,
             // // in-legend display
             label: 'Serie',
-            value: (self, rawValue) => rawValue.toFixed(this.options.decimalsPrecision),
+            value: (self, rawValue) => rawValue?.toFixed(this.options.decimalsPrecision),
             // // series style
             stroke: 'red',
             width: 1,
@@ -178,8 +180,12 @@ export class NgxUplotComponent implements OnInit, OnDestroy {
         // this.uplot.redraw(false, true);
     }
 
-    init(options?: ChartOptions) {
+    init(options?: ChartOptions, rawData?: boolean) {
         this.data = [[]];
+        this.rawData = rawData;
+        if (!Utils.isNullOrUndefined(options?.rawData)) {
+            this.rawData = options.rawData;
+        }
         if (options) {
             this.options = options;
             if (!options.id) {
@@ -187,7 +193,7 @@ export class NgxUplotComponent implements OnInit, OnDestroy {
                 this.options.series = this.sampleSerie;
             } else {
                 // this.data = this.sampleData;
-                this.data = [this.xtime];
+                this.data = [this.xSample];
             }
         }
         let opt = this.options || this.defOptions;
@@ -199,11 +205,15 @@ export class NgxUplotComponent implements OnInit, OnDestroy {
         this.checkDateFormat();
         if (this.options.dateFormat && this.xDateFormat[this.options.dateFormat] && this.options.timeFormat && this.xTimeFormat[this.options.timeFormat]) {
             this.fmtDate = uPlot.fmtDate(this.xDateFormat[this.options.dateFormat].legendDate + ' ' + this.xTimeFormat[this.options.timeFormat]);
-            this.options.axes[0].values = this.xDateFormat[this.options.dateFormat].values;
+            if (this.rawData) {
+                this.options.axes[0].values = (self, rawValue) => rawValue;
+            } else {
+                this.options.axes[0].values = this.xDateFormat[this.options.dateFormat].values;
+            }
         }
         this.sampleSerie[1].label = this.languageLabels.serie;
         if (this.options.series.length > 0) {
-            this.options.series[0].value = (self, rawValue) => this.fmtDate(new Date(rawValue * 1e3));
+            this.options.series[0].value = (self, rawValue) => this.rawData ? rawValue : this.fmtDate(new Date(rawValue * 1e3));
             this.options.series[0].label = this.languageLabels.time;
         }
         if (this.options.axes.length > 0) {
@@ -235,10 +245,10 @@ export class NgxUplotComponent implements OnInit, OnDestroy {
 
     setOptions(options: Options) {
         this.options = options;
-        this.init(this.options);
+        this.init(this.options, this.rawData);
     }
 
-    addSerie(index: string, attribute: Series) {
+    addSerie(index: number, attribute: Series) {
         this.data.push([null,null]);
         if (attribute.lineInterpolation === this.lineInterpolations.stepAfter) {
             attribute.paths = uPlot.paths.stepped({ align: 1 });
@@ -252,7 +262,7 @@ export class NgxUplotComponent implements OnInit, OnDestroy {
     }
 
     setSample() {
-        let sample = [this.xtime];
+        let sample = [this.xSample];
         for (let i = 0; i < this.uplot.series.length; i++) {
             sample.push([Math.floor(Math.random() * 20), Math.floor(Math.random() * 30)]);
         }
@@ -261,6 +271,13 @@ export class NgxUplotComponent implements OnInit, OnDestroy {
 
     setData(data = [[]]) {
         this.data = data;
+        this.uplot.setData(this.data);
+    }
+
+    addData(data = [[]]) {
+        for (var index = 0; index < data.length; index++) {
+            this.data[index] = this.data[index].concat(data[index]);
+        }
         this.uplot.setData(this.data);
     }
 
@@ -285,7 +302,7 @@ export class NgxUplotComponent implements OnInit, OnDestroy {
         }
         // remove data out of size
         let min = x - size;
-        if (this.data[0][0] < min) {
+        while (this.data[0][0] < min) {
             for (let i = 0; i < this.data.length; i++) {
                 this.data[i].shift();
             }
@@ -340,7 +357,7 @@ export class NgxUplotComponent implements OnInit, OnDestroy {
                     const x = u.data[0][idx];
                     const anchor = { left: left + bLeft, top: top + bTop };
                     const time = this.fmtDate(new Date(x * 1e3));
-                    const xdiv = `<div class="ut-head">${u.series[0].label}: ${time}</div>`;
+                    const xdiv = `<div class="ut-head">${u.series[0].label}: ${this.rawData ? x : time}</div>`;
                     let series = '';
                     for (let i = 1; i < u.series.length; i++) {
                         let value = '';
@@ -357,6 +374,101 @@ export class NgxUplotComponent implements OnInit, OnDestroy {
                 }
             }
         };
+    }
+
+    getColorForValue(ranges: ChartLineZone[], value: number): string {
+        // Sort ranges by the min value (just in case)
+        const sortedRanges = ranges.sort((a, b) => a.min - b.min);
+
+        // Iterate through the sorted ranges to find the corresponding color for the value
+        for (let i = 0; i < sortedRanges.length; i++) {
+            const range = sortedRanges[i];
+
+            // Check if the value falls within the range
+            if (value >= range.min && value <= range.max) {
+                return range.stroke;  // Return the corresponding color
+            }
+        }
+
+        // If no range was found for the value, return a default color (base color)
+        return 'red';  // Or any other default color you prefer
+    }
+
+    scaleGradient(u, scaleKey, ori, scaleStops, discrete = false) {
+        let scale = u.scales[scaleKey];
+
+        // we want the stop below or at the scaleMax
+        // and the stop below or at the scaleMin, else the stop above scaleMin
+        let minStopIdx;
+        let maxStopIdx;
+
+        for (let i = 0; i < scaleStops.length; i++) {
+            let stopVal = scaleStops[i][0];
+
+            if (stopVal <= scale.min || minStopIdx == null) {
+                minStopIdx = i;
+            }
+
+            maxStopIdx = i;
+
+            if (stopVal >= scale.max) {
+                break;
+            }
+        }
+
+        if (minStopIdx == maxStopIdx) {
+            return scaleStops[minStopIdx][1];
+        }
+
+        let minStopVal = scaleStops[minStopIdx][0];
+        let maxStopVal = scaleStops[maxStopIdx][0];
+
+        if (minStopVal == -Infinity) {
+            minStopVal = scale.min;
+        }
+
+        if (maxStopVal == Infinity) {
+            maxStopVal = scale.max;
+        }
+
+        let minStopPos = u.valToPos(minStopVal, scaleKey, true);
+        let maxStopPos = u.valToPos(maxStopVal, scaleKey, true);
+
+        let range = minStopPos - maxStopPos;
+
+        let x0, y0, x1, y1;
+
+        if (ori == 1) {
+            x0 = x1 = 0;
+            y0 = minStopPos;
+            y1 = maxStopPos;
+        }
+        else {
+            y0 = y1 = 0;
+            x0 = minStopPos;
+            x1 = maxStopPos;
+        }
+
+        if (Number.isNaN(y0) || Number.isNaN(y1)) {
+            return null;
+        }
+        let grd = this.uplot.ctx.createLinearGradient(x0, y0, x1, y1);
+
+        let prevColor;
+
+        for (let i = minStopIdx; i <= maxStopIdx; i++) {
+            let s = scaleStops[i];
+
+            let stopPos = i == minStopIdx ? minStopPos : i == maxStopIdx ? maxStopPos : u.valToPos(s[0], scaleKey, true);
+            let pct = (minStopPos - stopPos) / range;
+
+            if (discrete && i > minStopIdx) {
+                grd.addColorStop(pct, prevColor);
+            }
+            grd.addColorStop(pct, prevColor = s[1]);
+        }
+
+        return grd;
     }
 
     _proximityIndex(self, seriesIdx, hoveredIdx, cursorXVal) {
@@ -447,6 +559,9 @@ export interface ChartOptions extends NgxOptions {
     hideToolbar?: boolean;
     refreshInterval?: number;
     loadOldValues?: boolean;
+
+    scriptId?: string;
+    rawData?: boolean;
 }
 
 export interface NgxSeries extends Series {

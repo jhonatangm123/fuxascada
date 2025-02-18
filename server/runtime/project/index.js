@@ -1,5 +1,5 @@
 /*
-* Project manager: read, write, add, remove, ... and save 
+* Project manager: read, write, add, remove, ... and save
 */
 
 'use strict';
@@ -16,17 +16,19 @@ const DeviceType = require('../devices/device').DeviceType;
 const version = '1.02';
 var settings;                   // Application settings
 var logger;                     // Application logger
+var runtime;
 
 var data = {};                  // Project data
 
 /**
  * Init Project resource and update project
- * @param {*} _settings 
- * @param {*} log 
+ * @param {*} _settings
+ * @param {*} log
  */
-function init(_settings, log) {
+function init(_settings, log, _runtime) {
     settings = _settings;
     logger = log;
+    runtime = _runtime;
 
     // Init Project database
     return new Promise(function (resolve, reject) {
@@ -109,7 +111,7 @@ function load() {
                             }).catch(function (err) {
                                 logger.error(`project.prjstorage-failed-to-load! '${prjstorage.TableType.NOTIFICATIONS}' ${err}`);
                                 callback(err);
-                            }); 
+                            });
                         },
                         // step 4 get scripts
                         function (callback) {
@@ -129,7 +131,7 @@ function load() {
                             }).catch(function (err) {
                                 logger.error(`project.prjstorage-failed-to-load! '${prjstorage.TableType.REPORTS}' ${err}`);
                                 callback(err);
-                            }); 
+                            });
                         }
                     ],
                     async function (err) {
@@ -158,8 +160,8 @@ function load() {
 /**
  * Save the value in project storage
  * First set the value in local data, then save in storage
- * @param {*} cmd 
- * @param {*} data 
+ * @param {*} cmd
+ * @param {*} data
  */
 function setProjectData(cmd, value) {
     return new Promise(function (resolve, reject) {
@@ -236,7 +238,7 @@ function setProjectData(cmd, value) {
                 toremove = removeReport(value);
             } else {
                 logger.error(`prjstorage.setdata failed! '${section.table}'`);
-                reject('prjstorage.failed-to-setdata: Command not found!');    
+                reject('prjstorage.failed-to-setdata: Command not found!');
             }
             if (toremove) {
                 prjstorage.deleteSection(section).then(result => {
@@ -261,7 +263,7 @@ function setProjectData(cmd, value) {
 
 /**
  * Set or add if not exist (check with view.id) the View in Project
- * @param {*} view 
+ * @param {*} view
  */
 function setView(view) {
     var pos = -1;
@@ -279,7 +281,7 @@ function setView(view) {
 
 /**
  * Remove the View from Project
- * @param {*} view 
+ * @param {*} view
  */
 function removeView(view) {
     var pos = -1;
@@ -294,7 +296,7 @@ function removeView(view) {
 
 /**
  * Set Device to local data
- * @param {*} device 
+ * @param {*} device
  * @param {*} merge merge with exist (tags)
  */
 function setDevice(device, merge) {
@@ -308,7 +310,7 @@ function setDevice(device, merge) {
 
 /**
  * Remove Device from local data
- * @param {*} device 
+ * @param {*} device
  */
 function removeDevice(device) {
     delete data.devices[device.id];
@@ -317,23 +319,23 @@ function removeDevice(device) {
 
 /**
  * Set HMI Layout to local data
- * @param {*} layout 
+ * @param {*} layout
  */
 function setHmiLayout(layout) {
     data.hmi.layout = layout;
 }
 
 /**
- * Set Charts  
- * @param {*} charts 
+ * Set Charts
+ * @param {*} charts
  */
 function setCharts(charts) {
     data.charts = charts;
 }
 
 /**
- * Set Graphs  
- * @param {*} graphs 
+ * Set Graphs
+ * @param {*} graphs
  */
  function setGraphs(graphs) {
     data.graphs = graphs;
@@ -341,7 +343,7 @@ function setCharts(charts) {
 
 /**
  * Set or add if not exist (check with taxt.name) the Text in Project
- * @param {*} text 
+ * @param {*} text
  */
 function setText(text) {
     if (!data.texts) {
@@ -362,7 +364,7 @@ function setText(text) {
 
 /**
  * Remove the Text from Project
- * @param {*} text 
+ * @param {*} text
  */
 function removeText(text) {
     if (data.texts) {
@@ -379,7 +381,7 @@ function removeText(text) {
 
 /**
  * Set or add if not exist (check with alarm.name) the Alarm in Project
- * @param {*} alarm 
+ * @param {*} alarm
  */
 function setAlarm(alarm) {
     if (!data.alarms) {
@@ -400,7 +402,7 @@ function setAlarm(alarm) {
 
 /**
  * Remove the Alarm from Project
- * @param {*} alarm 
+ * @param {*} alarm
  */
 function removeAlarm(alarm) {
     if (data.alarms) {
@@ -417,7 +419,7 @@ function removeAlarm(alarm) {
 
 /**
  * Set or add if not exist (check with notification.id) the Notification in Project
- * @param {*} notification 
+ * @param {*} notification
  */
  function setNotification(notification) {
     if (!data.notifications) {
@@ -438,7 +440,7 @@ function removeAlarm(alarm) {
 
 /**
  * Remove the Notification from Project
- * @param {*} notification 
+ * @param {*} notification
  */
 function removeNotification(notification) {
     if (data.notifications) {
@@ -455,7 +457,7 @@ function removeNotification(notification) {
 
 /**
  * Set or add if not exist (check with script.id) the Script in Project
- * @param {*} script 
+ * @param {*} script
  */
  function setScript(script) {
     if (!data.scripts) {
@@ -476,7 +478,7 @@ function removeNotification(notification) {
 
 /**
  * Remove the Script from Project
- * @param {*} script 
+ * @param {*} script
  */
  function removeScript(script) {
     if (data.scripts) {
@@ -493,7 +495,7 @@ function removeNotification(notification) {
 
 /**
  * Set or add if not exist (check with report.id) the Report in Project
- * @param {*} report 
+ * @param {*} report
  */
  function setReport(report) {
     if (!data.reports) {
@@ -514,7 +516,7 @@ function removeNotification(notification) {
 
 /**
  * Remove the Report from Project
- * @param {*} script 
+ * @param {*} script
  */
  function removeReport(report) {
     if (data.reports) {
@@ -532,16 +534,16 @@ function removeNotification(notification) {
 /**
  * Get the project data in accordance with autorization
  */
-function getProject(userId, userGroups) {
+function getProject(userId, userPermission) {
     return new Promise(function (resolve, reject) {
-        const pdata = _filterProjectGroups(userGroups);
+        const pdata = _filterProjectPermission(userPermission);
         resolve(pdata);
     });
 }
 
 /**
  * Set the new Project, clear all from database and add the new content
- * @param {*} prjcontent 
+ * @param {*} prjcontent
  */
 function setProject(prjcontent) {
     return new Promise(function (resolve, reject) {
@@ -677,7 +679,7 @@ function getDeviceProperty(query) {
 }
 
 /**
- * Get the texts 
+ * Get the texts
  */
 function getTexts() {
     return new Promise(function (resolve, reject) {
@@ -699,7 +701,7 @@ function getTexts() {
 }
 
 /**
- * Get the alarms 
+ * Get the alarms
  */
 function getAlarms() {
     return new Promise(function (resolve, reject) {
@@ -721,7 +723,7 @@ function getAlarms() {
 }
 
 /**
- * Get the notifications 
+ * Get the notifications
  */
  function getNotifications() {
     return new Promise(function (resolve, reject) {
@@ -743,7 +745,7 @@ function getAlarms() {
 }
 
 /**
- * Get the scripts 
+ * Get the scripts
  */
  function getScripts() {
     return new Promise(function (resolve, reject) {
@@ -765,7 +767,7 @@ function getAlarms() {
 }
 
 /**
- * Get the reports 
+ * Get the reports
  */
  function getReports() {
     return new Promise(function (resolve, reject) {
@@ -792,6 +794,10 @@ function getAlarms() {
 function setDeviceProperty(query) {
     return new Promise(function (resolve, reject) {
         if (query.query === 'security') {
+            if (!query.value) {
+                resolve();
+                return;
+            }
             prjstorage.setSection({ table: prjstorage.TableType.DEVICESSECURITY, name: query.name, value: query.value }).then(() => {
                 resolve();
             }).catch(function (err) {
@@ -812,46 +818,56 @@ function getProjectDemo() {
     return JSON.parse(fs.readFileSync(demoProject, 'utf8'));;
 }
 
-function _filterProjectGroups(groups) {
+function _filterProjectPermission(userPermission) {
     var result = JSON.parse(JSON.stringify(data));// = { devices: {}, hmi: { views: [] } };
-    var admin = (groups === -1 || groups === 255) ? true : false;
-    if (!admin) {
+    const projectPermission = runtime.checkPermission(userPermission, false);
+    if (!projectPermission.show || !projectPermission.enabled) {   // is admin or secure disabled
         // from device remove the not used (no permission)
         // delete result.devices;
         delete result.server;
         // check navigation permission
         if (result.hmi.layout && result.hmi.layout.navigation.items) {
             for (var i = result.hmi.layout.navigation.items.length - 1; i >= 0; i--) {
-                var permission = result.hmi.layout.navigation.items[i].permission;
-                if (permission && !(permission & groups)) {
+                const itemPermission = runtime.checkPermission(userPermission, result.hmi.layout.navigation.items[i]);
+                if (!itemPermission.enabled) {
                     result.hmi.layout.navigation.items.splice(i, 1);
+                }
+            }
+        }
+        // check header permission
+        if (result.hmi.layout && result.hmi.layout.header.items) {
+            for (var i = result.hmi.layout.header.items.length - 1; i >= 0; i--) {
+                const itemPermission = runtime.checkPermission(userPermission, result.hmi.layout.header.items[i].property, true);
+                if (!itemPermission.enabled || !itemPermission.show) {
+                    result.hmi.layout.header.items.splice(i, 1);
                 }
             }
         }
         // check view item permission show / enabled
         for (var i = 0; i < result.hmi.views.length; i++) {
+            var view = result.hmi.views[i];
             if (result.hmi.views[i].items) {
                 Object.values(result.hmi.views[i].items).forEach((item) => {
-                    if (item.property && item.property.permission) {
-                        var view = result.hmi.views[i];
-                        var mask = (item.property.permission >> 8);
-                        var show = (mask) ? mask & groups : 1;
-                        mask = (item.property.permission & 255);
-                        var enabled = (mask) ? mask & groups : 1;
-                        if (!show) {
+                    if (item.property) {
+                        const itemPermission = runtime.checkPermission(userPermission, item.property);
+                        if (!itemPermission.show) {
                             var position = view.svgcontent.indexOf(item.id);
                             if (position >= 0) {
                                 position += item.id.length + 1;
                                 var hidetext = ' visibility="hidden" ';
                                 view.svgcontent = view.svgcontent.slice(0, position) + hidetext + view.svgcontent.slice(position);
                             }
-                        } else if (!enabled) {
+                        } else if (!itemPermission.enabled) {
                             item.property.events = [];
                             // disable the html controls (select, input, button)
-                            var splitted = utils.domStringSplitter(view.svgcontent, 'foreignobject', view.svgcontent.indexOf(item.id));
-                            if (splitted.tagcontent && splitted.tagcontent.length) {
-                                var disabled = utils.domStringSetAttribute(splitted.tagcontent, ['select', 'input', 'button'], 'disabled');
-                                view.svgcontent = splitted.before + disabled + splitted.after;
+                            const indexInContent = view.svgcontent.indexOf(item.id);
+                            if (indexInContent >= 0) {
+                                var splitted = utils.domStringSplitter(view.svgcontent, 'foreignobject', indexInContent);
+                                if (splitted.tagcontent && splitted.tagcontent.length) {
+                                    var disabled = utils.domStringSetAttribute(splitted.tagcontent, ['select', 'input', 'button'], 'disabled');
+                                    // disabled = utils.domStringSetOverlay(disabled, ['ngx-switch']);
+                                    view.svgcontent = splitted.before + disabled + splitted.after;
+                                }
                             }
                         }
                     }
@@ -881,12 +897,12 @@ function _mergeDefaultConfig() {
                                     deviceToAdd.tags = existDevice.tags;
                                 }
                                 setDevice(deviceToAdd, true);
-                                logger.info(`project.merge-config: Device ${deviceToAdd.name} added!`);    
+                                logger.info(`project.merge-config: Device ${deviceToAdd.name} added!`);
                             }
                         } catch (err) {
                             logger.error(`project.merge-config: DEVICES${JSON.stringify(device)} failed! ${err}`);
                             reject();
-                        }                            
+                        }
                     });
                 } catch (err) {
                     logger.error(`project.merge-config: DEVICES failed! ${err}`);

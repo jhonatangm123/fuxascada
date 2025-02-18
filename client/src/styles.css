@@ -1,6 +1,5 @@
 @import 'material-icons/iconfont/material-icons.css';
 @import "@angular/material/prebuilt-themes/indigo-pink.css";
-@import "~ngx-toastr/toastr.css";
 @import "~angular2-draggable/css/resizable.min.css";
 
 @font-face {
@@ -304,6 +303,14 @@ app-root {
     line-height: 46px;
 }
 
+.backdrop-white {
+    background-color: rgb(255, 255, 255);
+}
+
+.backdrop-black {
+    background-color: rgba(0, 0, 0);
+}
+
 .sidenav-menu {
     padding: 0px 0px 0px 0px;
     background-color: rgba(244, 245, 247, 1);
@@ -413,6 +420,7 @@ app-root {
 .menu-item-content-inline {
     text-align: left;
     padding: 10px 10px 10px 10px;
+    display: flex;
 }
 
 .menu-item-content-inline .mat-icon {
@@ -559,11 +567,11 @@ app-root {
 }
 
 .my-form-field-link {
-    position:absolute; 
-    bottom: 0px; 
-    right: 0px; 
-    height: 28px; 
-    width: 28px; 
+    position:absolute;
+    bottom: 0px;
+    right: 0px;
+    height: 28px;
+    width: 28px;
     border-radius: 2px 0px 0px 2px;
     background-color: var(--formInputBackground);
     color: var(--formInputColor);
@@ -628,6 +636,7 @@ mat-toolbar-row {
 .mat-dialog-title {
     margin: 0 0 12px !important;
     width: calc(100% - 50px);
+    cursor: move;
 }
 
 .mat-raised-button {
@@ -841,9 +850,9 @@ mat-toolbar-row {
 }
 
 .dialog-title {
-    display:inline-block; 
-    cursor:move;
-    display: unset !important;
+    display: inline-block !important;
+    cursor: move;
+    width: calc(100% - 50px);
 }
 
 .dialog-close-btn {
@@ -865,12 +874,12 @@ mat-toolbar-row {
     cursor: pointer;
     border: 1px solid rgba(0, 0, 0, 0.1) !important;
     font-size: 13px;
-    padding: 5px 2px 6px 3px !important;    
+    padding: 5px 2px 6px 3px !important;
     color:gray;
 }
 
 .input-color input:focus {
-    padding: 5px 2px 6px 3px !important;    
+    padding: 5px 2px 6px 3px !important;
     /* background-color: white; */
     border: 1px solid var(--formInputBorderFocus);
 }
@@ -952,6 +961,7 @@ mat-toolbar-row {
 /* Element side property */
 .element-property {
     display: block;
+    width: calc(100% - 10px);
 }
 
 .element-property-title {
@@ -1036,6 +1046,10 @@ mat-toolbar-row {
     margin-top: 25px;
 }
 
+.mt30 {
+    margin-top: 30px;
+}
+
 .ml10 {
     margin-left: 10px;
 }
@@ -1082,6 +1096,10 @@ mat-toolbar-row {
 
 .mr5 {
     margin-right: 5px;
+}
+
+.mb5 {
+    margin-bottom: 5px;
 }
 
 .mb10 {
@@ -1138,4 +1156,14 @@ mat-toolbar-row {
 
 .tac {
     text-align: center;
+}
+
+.form-input-error {
+    display: block;
+    color: #ff9122;
+    font-size: 12px !important;
+    font-weight: bold;
+}
+.wp100 {
+    width: 100%;
 }

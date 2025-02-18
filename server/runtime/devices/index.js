@@ -13,7 +13,7 @@ var wokingStatus;                   // Current status (start/stop) to know if is
 const FuxaServerId = '0';
 /**
  * Init by set the access to application resource
- * @param {*} _runtime 
+ * @param {*} _runtime
  */
 function init(_runtime) {
     runtime = _runtime;
@@ -74,7 +74,7 @@ function update() {
 
 /**
  * Update the device, load and restart it
- * @param {*} device 
+ * @param {*} device
  */
 function updateDevice(device) {
     if (!activeDevices[device.id]) {
@@ -97,7 +97,7 @@ function updateDevice(device) {
 
 /**
  * Remove the device, stop it if active and remove from actieDevices list
- * @param {*} device 
+ * @param {*} device
  */
 function removeDevice(device) {
     if (!activeDevices[device.id]) {
@@ -113,13 +113,13 @@ function removeDevice(device) {
 }
 
 /**
- * Load the device from project and add or remove of active device for the management 
+ * Load the device from project and add or remove of active device for the management
  */
 function load() {
     var tempdevices = runtime.project.getDevices();
     activeDevices = {};
     runtime.daqStorage.reset();
-    // check existing or to add new 
+    // check existing or to add new
     for (var id in tempdevices) {
         if (tempdevices[id].enabled) {
             if(tempdevices[id].type == 'ModbusRTU'){
@@ -141,8 +141,8 @@ function load() {
 }
 
 /**
- * Load the device to manage and set on depending of settings 
- * @param {*} device 
+ * Load the device to manage and set on depending of settings
+ * @param {*} device
  */
 function loadDevice(device) {
     if (activeDevices[device.id]) {
@@ -173,7 +173,7 @@ function loadDevice(device) {
 }
 
 /**
- * Return all devices status 
+ * Return all devices status
  */
 function getDevicesStatus() {
     var adev = {};
@@ -198,9 +198,9 @@ function getDevicesValues() {
 /**
  * Get the Device Tag value
  * used from Alarms
- * @param {*} deviceid 
- * @param {*} sigid 
- * @param {*} value 
+ * @param {*} deviceid
+ * @param {*} sigid
+ * @param {*} value
  */
 function getDeviceValue(deviceid, sigid) {
     if (activeDevices[deviceid]) {
@@ -212,7 +212,7 @@ function getDeviceValue(deviceid, sigid) {
 /**
  * Get the Device Tag value
  * used from Alarms, Script
- * @param {*} sigid 
+ * @param {*} sigid
  * @param {*} fully, struct with timestamp
  */
  function getTagValue(sigid, fully) {
@@ -235,15 +235,18 @@ function getDeviceValue(deviceid, sigid) {
 /**
  * Get the Device Tag Id
  * used from Script
- * @param {*} tagName 
+ * @param {*} tagName
+ * @param {*} deviceName
  */
-function getTagId(tagName) {
+function getTagId(tagName, deviceName) {
     try {
         const devices = runtime.project.getDevices();
         for (var id in devices) {
-            const tag = Object.values(devices[id].tags).find(tag => tag.name === tagName);
-            if (tag) {
-                return tag.id;
+            if (!deviceName || devices[id].name === deviceName) {
+                const tag = Object.values(devices[id].tags).find(tag => tag.name === tagName);
+                if (tag) {
+                    return tag.id;
+                }
             }
         }
     } catch (err) {
@@ -255,14 +258,49 @@ function getTagId(tagName) {
 /**
  * Set the Device Tag value
  * used from Scripts
- * @param {*} tagid 
- * @param {*} value 
+ * @param {*} tagid
+ * @param {*} value
  */
- function setTagValue(tagid, value) {
+async function setTagValue(tagid, value) {
     try {
         let deviceid = getDeviceIdFromTag(tagid)
         if (activeDevices[deviceid]) {
-            return activeDevices[deviceid].setValue(tagid, value);
+            return  await activeDevices[deviceid].setValue(tagid, value);
+        }
+    } catch (err) {
+        console.error(err);
+    }
+    return null;
+}
+
+/**
+ * Get the Device Tag Daq settings
+ * used from Scripts
+ * @param {*} tagid
+ */
+function getTagDaqSettings(tagId) {
+    try {
+        let deviceId = getDeviceIdFromTag(tagId)
+        if (activeDevices[deviceId]) {
+            return activeDevices[deviceId].getTagDaqSettings(tagId);
+        }
+    } catch (err) {
+        console.error(err);
+    }
+    return null;
+}
+
+/**
+ * Set the Device Tag Daq settings
+ * used from Scripts
+ * @param {*} tagId
+ * @param {*} settings
+ */
+function setTagDaqSettings(tagId, settings) {
+    try {
+        let deviceId = getDeviceIdFromTag(tagId);
+        if (activeDevices[deviceId]) {
+            return activeDevices[deviceId].setTagDaqSettings(tagId, settings);
         }
     } catch (err) {
         console.error(err);
@@ -274,7 +312,7 @@ function getTagId(tagName) {
  * Enable/disable Device connection
  * used from Scripts
  * @param {*} deviceName
- * @param {*} enable 
+ * @param {*} enable
  */
 function enableDevice(deviceName, enable) {
     try {
@@ -291,9 +329,63 @@ function enableDevice(deviceName, enable) {
 }
 
 /**
+ * Get the Device property
+ * used from Scripts
+ * @param {*} deviceName
+ */
+function getDeviceProperty(deviceName) {
+    try {
+        let device = runtime.project.getDevice(deviceName);
+        if (device) {
+            return device.property;
+        }
+    } catch (err) {
+        console.error(err);
+    }
+    return null;
+}
+
+/**
+ * Set the Device property
+ * used from Scripts
+ * @param {*} deviceName
+ * @param {*} property
+ */
+function setDeviceProperty(deviceName, property) {
+    try {
+        let device = runtime.project.getDevice(deviceName);
+        if (device) {
+            device.property = property;
+            updateDevice(device);
+        }
+    } catch (err) {
+        console.error(err);
+    }
+    return null;
+}
+
+/**
+ * return Device object
+ * used from Scripts
+ * @param {*} deviceName string
+ * @param {*} asInterface boolean
+ */
+function getDevice(deviceName, asInterface) {
+    try {
+        const device = runtime.project.getDevice(deviceName);
+        if (device) {
+            return asInterface ? activeDevices[device.id].getComm() : activeDevices[device.id];
+        }
+        return null;
+    } catch (err) {
+        console.error(err);
+    }
+}
+
+/**
  * Get the Device from the tag id
  * used from Alarms
- * @param {*} sigid 
+ * @param {*} sigid
  */
  function getDeviceIdFromTag(sigid) {
     for (var id in activeDevices) {
@@ -308,7 +400,7 @@ function enableDevice(deviceName, enable) {
 /**
  * Get the Tag value format from the tag id
  * used from Report
- * @param {*} sigid 
+ * @param {*} sigid
  */
 function getTagFormat(sigid) {
     for (var id in activeDevices) {
@@ -329,20 +421,20 @@ function isWoking() {
 
 /**
  * Set the Device Tag value
- * @param {*} deviceid 
- * @param {*} sigid 
- * @param {*} value 
+ * @param {*} deviceid
+ * @param {*} sigid
+ * @param {*} value
  */
-function setDeviceValue(deviceid, sigid, value, fnc) {
+async function setDeviceValue(deviceid, sigid, value, fnc) {
     if (activeDevices[deviceid]) {
-        activeDevices[deviceid].setValue(sigid, value, fnc);
+        await activeDevices[deviceid].setValue(sigid, value, fnc);
     }
 }
 
 /**
  * Set connection device status to server tag
- * @param {*} deviceId 
- * @param {*} status 
+ * @param {*} deviceId
+ * @param {*} status
  */
 function setDeviceConnectionStatus(deviceId, status) {
     activeDevices[FuxaServerId].setDeviceConnectionStatus(deviceId, status);
@@ -350,8 +442,8 @@ function setDeviceConnectionStatus(deviceId, status) {
 
 /**
  * Return the Device browser result Tags/Nodes
- * @param {*} deviceid 
- * @param {*} node 
+ * @param {*} deviceid
+ * @param {*} node
  */
 function browseDevice(deviceid, node, callback) {
     return new Promise(function (resolve, reject) {
@@ -369,8 +461,8 @@ function browseDevice(deviceid, node, callback) {
 
 /**
  * Return Device Tag/Node attribute
- * @param {*} deviceid 
- * @param {*} node 
+ * @param {*} deviceid
+ * @param {*} node
  */
 function readNodeAttribute(deviceid, node) {
     return new Promise(function (resolve, reject) {
@@ -388,7 +480,7 @@ function readNodeAttribute(deviceid, node) {
 
 /**
  * Return Device Tags settings
- * @param {*} deviceId 
+ * @param {*} deviceId
  */
 function getDeviceTagsResult(deviceId) {
     return new Promise(function (resolve, reject) {
@@ -406,19 +498,39 @@ function getDeviceTagsResult(deviceId) {
 
 /**
  * Return the property (security mode) supported from device
- * @param {*} endpoint 
- * @param {*} type 
+ * @param {*} endpoint
+ * @param {*} type
  */
 function getSupportedProperty(endpoint, type) {
-    return Device.getSupportedProperty(endpoint, type);
+    return Device.getSupportedProperty(endpoint, type, runtime.plugins.manager);
 }
 
 /**
  * Return result of request
- * @param {*} property 
+ * @param {*} property
  */
 function getRequestResult(property) {
     return Device.getRequestResult(property);
+}
+
+/**
+ * Return result of get node values
+ * @param {*} tagId
+ * @param {*} fromDate
+ * @param {*} toDate return current datetime if its not a valid date
+ */
+async function getHistoricalTags(tagIds, fromTs, toTs) {
+    return new Promise((resolve, reject) => {
+        /*Check if getting date from script is correct*/
+        if (isNaN(toTs) || isNaN(fromTs) || toTs < fromTs) {
+            runtime.logger.error(`Incorect Date Format ${fromTs} - ${toTs}`);
+            reject(`Incorect Date Format ${fromTs} - ${toTs}`);
+        }
+
+        runtime.daqStorage.getNodesValues(tagIds, fromTs, toTs).then((res) => {
+            resolve(res);
+        }).catch((err) => reject(err));
+    });
 }
 
 var devices = module.exports = {
@@ -434,7 +546,7 @@ var devices = module.exports = {
     getDevicesValues: getDevicesValues,
     getDeviceValue: getDeviceValue,
     getTagValue: getTagValue,
-    setTagValue: setTagValue,    
+    setTagValue: setTagValue,
     setDeviceValue: setDeviceValue,
     getDeviceIdFromTag: getDeviceIdFromTag,
     browseDevice: browseDevice,
@@ -445,5 +557,11 @@ var devices = module.exports = {
     getRequestResult: getRequestResult,
     getTagFormat: getTagFormat,
     enableDevice: enableDevice,
+    getDevice: getDevice,
     getTagId: getTagId,
+    getTagDaqSettings: getTagDaqSettings,
+    setTagDaqSettings: setTagDaqSettings,
+    getDeviceProperty: getDeviceProperty,
+    setDeviceProperty: setDeviceProperty,
+    getHistoricalTags: getHistoricalTags,
 }

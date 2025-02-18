@@ -12,8 +12,9 @@ declare var SVG: any;
 })
 export class ShapesComponent extends GaugeBaseComponent {
 
-    static TypeId = 'shapes';                                   // Standard shapes (General, Shapes)
-    static TypeTag = 'svg-ext-' + ShapesComponent.TypeId;       // used to identify shapes type, binded with the library svgeditor
+    // TypeId = 'shapes';                                   // Standard shapes (General, Shapes)
+    static TypeTag = 'svg-ext-shapes'; // used to identify shapes type, binded with the library svgeditor
+
     static LabelTag = 'Shapes';
 
     static actionsType = { hide: GaugeActionsType.hide, show: GaugeActionsType.show, blink: GaugeActionsType.blink, stop: GaugeActionsType.stop,
@@ -25,6 +26,7 @@ export class ShapesComponent extends GaugeBaseComponent {
     }
 
     static getSignals(pro: any) {
+
         let res: string[] = [];
         if (pro.variableId) {
             res.push(pro.variableId);
@@ -74,10 +76,10 @@ export class ShapesComponent extends GaugeBaseComponent {
                         }
                         // check if general shape (line/path/fpath/text) to set the stroke
                         if (propertyColor.fill) {
-                            svgele.node.setAttribute('fill', propertyColor.fill);
+                            GaugeBaseComponent.walkTreeNodeToSetAttribute(svgele.node, 'fill', propertyColor.fill);
                         }
                         if (propertyColor.stroke) {
-                            svgele.node.setAttribute('stroke', propertyColor.stroke);
+                            GaugeBaseComponent.walkTreeNodeToSetAttribute(svgele.node, 'stroke', propertyColor.stroke);
                         }
 
                     }
@@ -125,7 +127,6 @@ export class ShapesComponent extends GaugeBaseComponent {
     }
 
     static runMyAction(element, type, gaugeStatus: GaugeStatus) {
-        console.log('asdf');
         if (gaugeStatus.actionRef && gaugeStatus.actionRef.type === type) {
             return;
         }

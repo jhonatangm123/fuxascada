@@ -1,8 +1,8 @@
-![fuxa logo](/client/src/favicon.ico) 
+![fuxa logo](/client/src/favicon.ico)
 # FUXA
 FUXA is a web-based Process Visualization (SCADA/HMI/Dashboard) software. With FUXA you can create modern process visualizations with individual designs for your machines and real-time data display.
-fsdfs
-![fuxa editor](/screenshot/fuxa-editor.png) 
+
+![fuxa editor](/screenshot/fuxa-editor.png)
 
 ![fuxa ani](/screenshot/fuxa-ani.gif)
 
@@ -19,18 +19,46 @@ Here is a [live demo](https://frangoteam.github.io) example of FUXA editor.
 ## Installing and Running
 FUXA is developed with NodeJS (backend) and Angular (frontend).
 
-You need to have installed [Node](https://nodejs.org/en/about/previous-releases) Version 14.21.3 (npm 6.14.18) || 16.20.2 (npm 8.19.4) || 18.18.2 (npm 9.8.1).
+See the Wiki for more details about installing and getting started
 
-**WARNING** In linux with nodejs Version 16.20.2 || 18.18.2 there are problems with the node-snap7 library for communication with Siemens S7 PLCs, if you don't intend to use it you can remove it from the server/package.json
+[Wiki](https://github.com/frangoteam/FUXA/wiki)
 
-Install from [NPM](https://www.npmjs.com/package/@frangoteam/fuxa) (first option)
-In linux to use only with nodejs Version 14.21.3
+[Wiki Installing/Building](https://github.com/frangoteam/FUXA/wiki/Installing-and-Running)
+
+
+### Running from docker
+```
+docker pull frangoteam/fuxa:latest
+docker run -d -p 1881:1881 frangoteam/fuxa:latest
+
+// persistent storage of application data (project), daq (tags history), logs and images (resource)
+docker run -d -p 1881:1881 -v fuxa_appdata:/usr/src/app/FUXA/server/_appdata -v fuxa_db:/usr/src/app/FUXA/server/_db -v fuxa_logs:/usr/src/app/FUXA/server/_logs -v fuxa_images:/usr/src/app/FUXA/server/_images frangoteam/fuxa:latest
+
+// with Docker compose
+// persistent storage will be at ./appdata ./db ./logs and ./images
+wget https://raw.githubusercontent.com/frangoteam/FUXA/master/compose.yml
+docker compose up -d
+```
+
+### Install from [NPM](https://www.npmjs.com/package/@frangoteam/fuxa)
+
+You need to have installed [Node](https://nodejs.org/en/about/previous-releases) Version 18.
+
+**WARNING** In linux with nodejs Version 18 the installation could be a challenge.
+If you don't intend communicate with Siemens PLCs via S7 (node-snap7 library) you can install from [NPM @frangoteam/fuxa-min](https://www.npmjs.com/package/@frangoteam/fuxa-min)
+
 ```
 npm install -g --unsafe-perm @frangoteam/fuxa
 fuxa
 ```
 
-Or [Download the latest release](https://github.com/frangoteam/FUXA/releases) and unpack it (second option)
+### Install from source
+[Download the latest release](https://github.com/frangoteam/FUXA/releases) and unpack it
+
+You need to have installed [Node](https://nodejs.org/en/about/previous-releases) Version 18.
+
+**WARNING** In linux with nodejs Version 18 the installation could be a challenge.
+If you don't intend to communicate with Siemens PLCs via S7, you can remove the ```node-snap7``` library from the ```server/package.json```. Similarly, if you don't intend to use ODBC to communicate with an external database, you can remove the ```odbc``` library from the ```server/package.json```.
 
 ```
 cd ./server
@@ -38,19 +66,37 @@ npm install
 npm start
 ```
 
-Or in linux running from docker (third option)
-```
-docker pull frangoteam/fuxa:latest
-docker run -d -p 1881:1881 frangoteam/fuxa:latest
-
-// persistent storage of application data (project), daq (tags history), logs and images (resource)
-docker run -d -p 1881:1881 -v fuxa_appdata:/usr/src/app/FUXA/server/_appdata -v fuxa_db:/usr/src/app/FUXA/server/_db -v fuxa_logs:/usr/src/app/FUXA/server/_logs -v fuxa_images:/usr/src/app/FUXA/server/_images frangoteam/fuxa:latest
-```
-
 Open up a browser (better Chrome) and navigate to http://localhost:1881
 
+**Note** If you intend to use nodejs version 14, please remove odbc from the package.json dependencies. nodejs 14 may have compatibility issues with certain versions of odbc, which could lead to installation errors.
+
+### Creating the Electron Application
+Electron is a framework for building cross-platform desktop applications using web technologies. An Electron application is standalone, meaning it can be run independently on your desktop without needing a web browser.
+
+To create the Electron application, you need to have node.js 18 installed. Follow these steps:
+
+Build Server and Client First
+```
+cd ./server
+npm install
+cd ../client
+npm install
+npm run build
+```
+
+Packaging
+```
+cd ./app
+npm install
+npm run package
+```
+
+After following these steps, you will have a standalone Electron application for FUXA. The application can be found in the ./app directory.
+
 ## Usage
-Look the guide in [wiki](https://github.com/frangoteam/FUXA/wiki) pages
+- Look the guide in [wiki](https://github.com/frangoteam/FUXA/wiki) pages
+- Look video from [frangoteam](https://www.youtube.com/@umbertonocelli5301)
+- Look video from [Fusion Automate - Urvish Nakum](https://youtube.com/playlist?list=PLxrSjjYyzaaK8uY3kVaFzfGnwhVXiCEAO&si=aU1OxgkUvLQ3bXHq)
 
 ## To Debug (Full Stack)
 Install and start to serve the frontend
@@ -69,13 +115,15 @@ In vscode: Debug ‘Server & Client’
 Build the frontend for production
 ```
 cd ./client
-ng build --prod
+ng build --configuration=production
 ```
 
 ## Contributing
 Any contributions you make are greatly appreciated.
 If you identify any errors, or have an idea for an improvement, please open an [issue](/../../issues).
 But before filing a new issue, please look through already existing issues. Search open and closed issues first.
+
+Non-code contributions are also highly appreciated, such as improving the documentation or promoting FUXA on social media.
 
 ### Pull-Requests
 If you want to raise a pull-request with a new feature, or a refactoring of existing code please first open an issue explaining the problem.
@@ -93,7 +141,7 @@ Please ensure you follow the coding standards used through-out the existing code
 - Opening brace on same line as if/for/function and so on, closing brace on its own line.
 
 ## Let us know!
-We’d be really happy if you send us your own shapes in order to collect a library to share it with others. Just send an email to 4frango@gmail.com and do let us know if you have any questions or suggestions regarding our work.
+We’d be really happy if you send us your own shapes in order to collect a library to share it with others. Just send an email to info@frangoteam.org and do let us know if you have any questions or suggestions regarding our work.
 
 ## <a href="https://discord.gg/WZhxz9uHh4" target="_blank" > <img src="https://skillicons.dev/icons?i=discord" alt=""></a>
 

@@ -1,19 +1,28 @@
 import { Component, OnInit, AfterViewInit, ViewChild, OnDestroy } from '@angular/core';
-import { MatTable, MatTableDataSource } from '@angular/material/table';
-import { MatPaginator } from '@angular/material/paginator';
-import { MatMenuTrigger } from '@angular/material/menu';
+import { MatLegacyRow as MatRow, MatLegacyTable as MatTable, MatLegacyTableDataSource as MatTableDataSource } from '@angular/material/legacy-table';
+import { MatLegacyPaginator as MatPaginator } from '@angular/material/legacy-paginator';
+import { MatLegacyMenuTrigger as MatMenuTrigger } from '@angular/material/legacy-menu';
 import { MatSort } from '@angular/material/sort';
 import { Utils } from '../../../../_helpers/utils';
-import { MatDialog } from '@angular/material/dialog';
+import { MatLegacyDialog as MatDialog } from '@angular/material/legacy-dialog';
 
 import { TranslateService } from '@ngx-translate/core';
 
 import { DaterangeDialogComponent } from '../../../../gui-helpers/daterange-dialog/daterange-dialog.component';
-import { IDateRange, DaqQuery, TableType, TableOptions, TableColumn, TableCellType, TableCell, TableRangeType } from '../../../../_models/hmi';
+import { IDateRange, DaqQuery, TableType, TableOptions, TableColumn, TableCellType, TableCell, TableRangeType, TableCellAlignType, GaugeEvent, GaugeEventType, TableFilter } from '../../../../_models/hmi';
 import { format } from 'fecha';
-import { BehaviorSubject, Subject, timer } from 'rxjs';
-import { takeUntil } from 'rxjs/operators';
+import { BehaviorSubject, Observable, Subject, of, timer } from 'rxjs';
+import { catchError, concatMap, switchMap, takeUntil } from 'rxjs/operators';
 import { DataConverterService, DataTableColumn, DataTableContent } from '../../../../_services/data-converter.service';
+import { ScriptService } from '../../../../_services/script.service';
+import { ProjectService } from '../../../../_services/project.service';
+import { SCRIPT_PARAMS_MAP, ScriptParam } from '../../../../_models/script';
+import { HmiService } from '../../../../_services/hmi.service';
+import { AlarmBaseType, AlarmColumnsType, AlarmPriorityType, AlarmsFilter, AlarmStatusType } from '../../../../_models/alarm';
+import { ReportsService } from '../../../../_services/reports.service';
+import { ReportColumnsType, ReportFile, ReportsFilter } from '../../../../_models/report';
+import * as FileSaver from 'file-saver';
+import { CommandService } from '../../../../_services/command.service';
 
 declare const numeral: any;
 @Component({
@@ -29,6 +38,11 @@ export class DataTableComponent implements OnInit, AfterViewInit, OnDestroy {
     @ViewChild(MatPaginator, {static: false}) paginator: MatPaginator;
     onTimeRange$ = new BehaviorSubject<DaqQuery>(null);
 
+    rxjsPollingTimer: Observable<number>;
+    statusText = AlarmStatusType;
+    priorityText = AlarmPriorityType;
+    alarmColumnType = AlarmColumnsType;
+    reportColumnType = ReportColumnsType;
     loading = false;
     id: string;
     type: TableType;
@@ -40,6 +54,7 @@ export class DataTableComponent implements OnInit, AfterViewInit, OnDestroy {
     timestampMap = {};
     tagsColumnMap = {};
     range = { from: Date.now(), to: Date.now() };
+    tableType = TableType;
     tableHistoryType = TableType.history;
     lastRangeType = TableRangeType;
     tableOptions = DataTableComponent.DefaultOptions();
@@ -49,9 +64,21 @@ export class DataTableComponent implements OnInit, AfterViewInit, OnDestroy {
     private lastDaqQuery = new DaqQuery();
     private destroy$ = new Subject<void>();
     private historyDateformat = '';
+    addValueInterval = 0;
+    private pauseMemoryValue: TableMapValueDictionary = {};
+    setOfSourceTableData = false;
+    selectedRow = null;
+    events: GaugeEvent[];
+    eventSelectionType = Utils.getEnumKey(GaugeEventType, GaugeEventType.select);
+    dataFilter: TableFilter | AlarmsFilter | ReportsFilter;
 
     constructor(
         private dataService: DataConverterService,
+        private projectService: ProjectService,
+        private hmiService: HmiService,
+        private scriptService: ScriptService,
+        private reportsService: ReportsService,
+        private commandService: CommandService,
         public dialog: MatDialog,
         private translateService: TranslateService) { }
 
@@ -68,8 +95,21 @@ export class DataTableComponent implements OnInit, AfterViewInit, OnDestroy {
             }
             return false;
         };
-    }
 
+        if (this.isAlarmsType()) {
+            Object.keys(this.statusText).forEach(key => {
+                this.statusText[key] = this.translateService.instant(this.statusText[key]);
+            });
+            Object.keys(this.priorityText).forEach(key => {
+                this.priorityText[key] = this.translateService.instant(this.priorityText[key]);
+            });
+            if (this.type === TableType.alarms) {
+                this.startPollingAlarms();
+            }
+        } else if (this.isReportsType()) {
+            this.startPollingReports();
+        }
+    }
     ngAfterViewInit() {
         this.sort.disabled = this.type === TableType.data;
         this.bindTableControls();
@@ -78,10 +118,30 @@ export class DataTableComponent implements OnInit, AfterViewInit, OnDestroy {
     ngOnDestroy() {
         try {
             this.destroy$.next();
-            this.destroy$.unsubscribe();
+            this.destroy$.complete();
         } catch (e) {
             console.error(e);
         }
+    }
+
+    private startPollingAlarms() {
+        this.rxjsPollingTimer = timer(0, 2500);
+        this.rxjsPollingTimer.pipe(
+            takeUntil(this.destroy$),
+            switchMap(() => this.hmiService.getAlarmsValues(<AlarmsFilter>this.dataFilter))
+        ).subscribe(result => {
+            this.updateAlarmsTable(result);
+        });
+    }
+
+    private startPollingReports() {
+        this.rxjsPollingTimer = timer(0, 60000 * 5);
+        this.rxjsPollingTimer.pipe(
+            takeUntil(this.destroy$),
+            switchMap(() => this.reportsService.getReportsQuery(<ReportsFilter>this.dataFilter))
+        ).subscribe(result => {
+            this.updateReportsTable(result);
+        });
     }
 
     onRangeChanged(ev) {
@@ -119,7 +179,11 @@ export class DataTableComponent implements OnInit, AfterViewInit, OnDestroy {
         });
     }
 
-    onDaqQuery() {
+    onDaqQuery(daqQuery?: DaqQuery) {
+        if (daqQuery) {
+            this.lastDaqQuery = <DaqQuery>Utils.mergeDeep(this.lastDaqQuery, daqQuery);
+        }
+        // this.lastDaqQuery.chunked = true;
         this.onTimeRange$.next(this.lastDaqQuery);
         if (this.type === TableType.history) {
             this.setLoading(true);
@@ -138,7 +202,7 @@ export class DataTableComponent implements OnInit, AfterViewInit, OnDestroy {
     }
 
     addValue(variableId: string, dt: number, variableValue: string) {
-        if (this.tagsMap[variableId]) {
+        if (this.type === TableType.data && this.tagsMap[variableId]) {
             this.tagsMap[variableId].value = variableValue;
             this.tagsMap[variableId].cells.forEach((cell: TableCellData) => {
                 cell.stringValue = Utils.formatValue(this.tagsMap[variableId].value, cell.valueFormat);
@@ -151,6 +215,14 @@ export class DataTableComponent implements OnInit, AfterViewInit, OnDestroy {
                     });
                 }
             });
+        } else if (this.type === TableType.history) {
+            if (this.tableOptions.realtime) {
+                if (this.addValueInterval && this.pauseMemoryValue[variableId] && Utils.getTimeDifferenceInSeconds(this.pauseMemoryValue[variableId]) < this.addValueInterval) {
+                    return;
+                }
+                this.pauseMemoryValue[variableId] = dt * 1e3;
+            }
+            this.addRowDataToTable(dt * 1e3, variableId, variableValue);
         }
     }
 
@@ -204,6 +276,7 @@ export class DataTableComponent implements OnInit, AfterViewInit, OnDestroy {
                 row[column.id] = <TableCellData> { stringValue: '' };
                 if (column.type === TableCellType.timestamp) {
                     row[column.id].stringValue = format(new Date(data[0][i]), column.valueFormat || 'YYYY-MM-DDTHH:mm:ss');
+                    row[column.id].timestamp = data[0][i];
                 } else if (column.type === TableCellType.variable) {
                     const tempValue = data[x][i];
                     if (Utils.isNumeric(tempValue)) {
@@ -224,6 +297,164 @@ export class DataTableComponent implements OnInit, AfterViewInit, OnDestroy {
             this.setLoading(false);
         }, 500);
         this.reloadActive = false;
+    }
+
+    updateAlarmsTable(alrs: AlarmBaseType[]) {
+        let rows = [];
+        alrs.forEach(alr => {
+            let alarm = {
+                type: { stringValue: this.priorityText[alr.type] },
+                name: { stringValue: alr.name },
+                status: { stringValue: this.statusText[alr.status] },
+                text: { stringValue: alr.text },
+                group: { stringValue: alr.group },
+                ontime: { stringValue: format(new Date(alr.ontime), 'YYYY.MM.DD HH:mm:ss') },
+                color: alr.color,
+                bkcolor: alr.bkcolor,
+                toack: alr.toack
+            };
+            if (alr.offtime) {
+                alarm['offtime'] = { stringValue: format(new Date(alr.offtime), 'YYYY.MM.DD HH:mm:ss') };
+            }
+            if (alr.acktime) {
+                alarm['acktime'] = { stringValue: format(new Date(alr.acktime), 'YYYY.MM.DD HH:mm:ss') };
+            }
+            if (alr.userack) {
+                alarm['userack'] = { stringValue: format(new Date(alr.userack), 'YYYY.MM.DD HH:mm:ss') };
+            }
+            rows.push(alarm);
+        });
+        this.dataSource.data = rows;
+    }
+
+    updateReportsTable(reports: ReportFile[]) {
+        let rows = [];
+        reports.forEach(item => {
+            let report = {
+                name: { stringValue: item.fileName },
+                ontime: { stringValue: format(new Date(item.created), 'YYYY.MM.DD HH:mm:ss') },
+                deletable: item.deletable,
+                fileName: item.fileName
+            };
+            rows.push(report);
+        });
+        this.dataSource.data = rows;
+    }
+
+    isSelectable(): boolean {
+        return this.events?.some(event => event.type === this.eventSelectionType);
+    }
+
+    selectRow(row: MatRow) {
+        if (this.isSelectable()) {
+            this.selectedRow = row;
+            this.events.forEach(event => {
+                this.runScript(event, this.selectedRow);
+            });
+        }
+    }
+
+    isSelected(row: MatRow) {
+        return this.selectedRow === row;
+    }
+
+    private runScript(event: GaugeEvent, selected: MatRow) {
+        if (event.actparam) {
+            let torun = Utils.clone(this.projectService.getScripts().find(dataScript => dataScript.id == event.actparam));
+            torun.parameters = <ScriptParam[]>Utils.clone(event.actoptions[SCRIPT_PARAMS_MAP]);
+            torun.parameters.forEach(param => {
+                if (Utils.isNullOrUndefined(param.value)) {
+                    param.value = selected;
+                }
+            });
+            this.scriptService.runScript(torun).subscribe(result => {
+            }, err => {
+                console.error(err);
+            });
+        }
+    }
+
+    addRowDataToTable(dt: number, tagId: string, value: any) {
+        let row = {};
+        let timestapColumnId = null;
+        let valueColumnId = null;
+        let exnameColumnId = null;
+        for (let x = 0; x < this.displayedColumns.length; x++) {
+            let column = <TableColumn>this.columnsStyle[this.displayedColumns[x]];
+            row[column.id] = <TableCellData> { stringValue: '' };
+            if (column.type === TableCellType.timestamp) {
+                timestapColumnId = column.id;
+                row[column.id].stringValue = format(new Date(dt), column.valueFormat || 'YYYY-MM-DDTHH:mm:ss');
+                row[column.id].timestamp = dt;
+            } else if (column.variableId === tagId) {
+                const tempValue = value;
+                if (Utils.isNumeric(tempValue)) {
+                    row[column.id].stringValue = Utils.formatValue(tempValue, column.valueFormat);
+                } else {
+                    row[column.id].stringValue = tempValue;
+                }
+                valueColumnId = column.id;
+            } else if (column.type === TableCellType.device) {
+                row[column.id].stringValue = column.exname;
+                exnameColumnId = column.id;
+            }
+        }
+        if (valueColumnId) {
+            const firstRow = this.dataSource.data[0];
+            if (firstRow && firstRow[timestapColumnId].stringValue === row[timestapColumnId].stringValue) {
+                firstRow[valueColumnId].stringValue = row[valueColumnId].stringValue;
+                if (exnameColumnId) {
+                    firstRow[exnameColumnId].stringValue = row[exnameColumnId].stringValue;
+                }
+            } else {
+                this.dataSource.data.unshift(row);
+                const rangeDiff = this.lastDaqQuery.to - this.lastDaqQuery.from;
+                this.lastDaqQuery.to = row[timestapColumnId].timestamp;
+                this.lastDaqQuery.from = this.lastDaqQuery.to - rangeDiff;
+                // remove out of range values
+                let count = 0;
+                for (let i = this.dataSource.data.length - 1; i >= 0; i--) {
+                    if (this.dataSource.data[i][timestapColumnId].timestamp < this.lastDaqQuery.from) {
+                        count++;
+                    } else {
+                        break;
+                    }
+                }
+                if (count) {
+                    this.dataSource.data.splice(-count, count);
+                }
+                this.dataSource = new MatTableDataSource(this.dataSource.data);
+            }
+        }
+    }
+
+    public setProperty(property: any, value: any): boolean {
+        if (Utils.isNullOrUndefined(this[property])) {
+            return false;
+        }
+        this[property] = value;
+        return true;
+    }
+
+    setTableAndData(tableData: TableData) {
+        this.setOfSourceTableData = true;
+        if (tableData.columns) {
+            this.displayedColumns = tableData.columns.map(cln => cln.id);
+            this.columnsStyle = tableData.columns;
+            tableData.columns.forEach(clnData => {
+                let column = clnData;
+                column.fontSize = tableData.header?.fontSize;
+                column.color = column.color || tableData.header?.color;
+                column.background = column.background || tableData.header?.background;
+                column.width = column.width || 100;
+                column.align = column.align || TableCellAlignType.left;
+                this.columnsStyle[column.id] = column;
+            });
+        }
+        if (tableData.rows) {
+            this.dataSource = new MatTableDataSource(tableData.rows);
+        }
+        this.bindTableControls();
     }
 
     applyFilter(filterValue: string) {
@@ -270,7 +501,8 @@ export class DataTableComponent implements OnInit, AfterViewInit, OnDestroy {
         // columns
         let columnIds = [];
         this.columnsStyle = {};
-        this.tableOptions.columns.forEach(cn => {
+        const columns = this.isAlarmsType() ? this.tableOptions.alarmsColumns : this.isReportsType() ? this.tableOptions.reportsColumns : this.tableOptions.columns;
+        columns.forEach(cn => {
             columnIds.push(cn.id);
             this.columnsStyle[cn.id] = cn;
             if (this.type === TableType.history) {
@@ -314,7 +546,7 @@ export class DataTableComponent implements OnInit, AfterViewInit, OnDestroy {
             }
         } else if (cell.type === TableCellType.timestamp) {
             if (this.isEditor) {
-                cell.stringValue = format(new Date(0), cell.valueFormat || 'YYYY-MM-DDTHH:mm:ss');;
+                cell.stringValue = format(new Date(0), cell.valueFormat || 'YYYY-MM-DDTHH:mm:ss');
             }
             this.addTimestampToMap(cell);
         } else if (cell.type === TableCellType.label) {
@@ -346,6 +578,47 @@ export class DataTableComponent implements OnInit, AfterViewInit, OnDestroy {
         this.tagsColumnMap[cell.variableId].push(cell);
     }
 
+    isAlarmsType(): boolean {
+        return this.type === TableType.alarms || this.type === TableType.alarmsHistory;
+    }
+
+    isReportsType(): boolean {
+        return this.type === TableType.reports;
+    }
+
+    onAckAlarm(alarm: any) {
+        if (!this.isEditor) {
+            this.hmiService.setAlarmAck(alarm.name?.stringValue).subscribe(result => {
+            }, error => {
+                console.error('Error setAlarmAck', error);
+            });
+        }
+    }
+
+    onDownloadReport(report: ReportFile) {
+        this.commandService.getReportFile(report.fileName).subscribe(content => {
+            let blob = new Blob([content], { type: 'application/pdf' });
+            FileSaver.saveAs(blob, report.fileName);
+        }, err => {
+            console.error('Download Report File err:', err);
+        });
+    }
+
+    onRemoveReportFile(report: ReportFile) {
+        const userConfirmed = window.confirm(this.translateService.instant('msg.file-remove', { value: report.fileName }));
+        if (userConfirmed) {
+            this.reportsService.removeReportFile(report.fileName).pipe(
+                concatMap(() => timer(2000)),
+                catchError((err) => {
+                    console.error(`Remove Report File ${report.fileName} err:`, err);
+                    return of(null);
+                })
+            ).subscribe(() => {
+                // this.loadDetails(report);
+            });
+        }
+    }
+
     public static DefaultOptions() {
         let options = <TableOptions> {
             paginator: {
@@ -357,6 +630,7 @@ export class DataTableComponent implements OnInit, AfterViewInit, OnDestroy {
             daterange: {
                 show: false
             },
+            realtime: false,
             lastRange: Utils.getEnumKey(TableRangeType, TableRangeType.last1h),
             gridColor: '#E0E0E0',
             header: {
@@ -371,8 +645,18 @@ export class DataTableComponent implements OnInit, AfterViewInit, OnDestroy {
                 fontSize: 10,
                 background: '#F9F9F9',
                 color: '#000000',
+
+            },
+            selection: {
+                background: '#3059AF',
+                color: '#FFFFFF',
+                fontBold: true,
             },
             columns: [new TableColumn(Utils.getShortGUID('c_'), TableCellType.timestamp, 'Date/Time'), new TableColumn(Utils.getShortGUID('c_'), TableCellType.label, 'Tags')],
+            alarmsColumns: [],
+            alarmFilter: { filterA: [], filterB: [], filterC: [] },
+            reportsColumns: [],
+            reportFilter: { filterA: [] },
             rows: [],
         };
         return options;
@@ -405,7 +689,61 @@ export class TableRangeConverter {
     }
 }
 
-// interface IRowDateTime {
-//     rowsIndex: number[];
-//     lastDateTime: string;
-// }
+interface TableMapValueDictionary {
+    [key: string]: number;
+}
+
+/**
+ * Interface definition for setTableAndData from script
+ */
+interface TableData {
+    paginator?: TableDataPaginatorOptions;
+    filter?: TableDataFilterOptions;
+    gridColor?: string;
+    header?: TableDataHeaderStyle;
+    rowStyle?: TableDataRowStyle;
+    columns?: TableDataColumnData[];
+    rows?: TableDataRow[];
+}
+
+interface TableDataPaginatorOptions {
+    show: boolean;
+    pageSize: number;
+}
+
+interface TableDataFilterOptions {
+    show: boolean;
+}
+
+interface TableDataHeaderStyle {
+    show: boolean;
+    height: number;
+    fontSize: number;
+    background: string;
+    color: string;
+}
+
+interface TableDataRowStyle {
+    height: number;
+    fontSize: number;
+    background: string;
+    color: string;
+}
+
+interface TableDataColumnData {
+    id: string;
+    label: string;
+    align?: string;
+    width?: number;
+    color?: string;
+    fontSize: number;
+    background: string;
+}
+
+interface TableDataRow {
+    cells: TableDataCell[];
+}
+
+interface TableDataCell {
+    value: string;
+}

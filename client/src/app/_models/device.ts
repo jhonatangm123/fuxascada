@@ -1,6 +1,19 @@
 import { Utils } from '../_helpers/utils';
 
-export const FuxaServer = {id: '0', name: 'FUXA' };
+export const FuxaServer = {
+    id: '0',
+    name: 'FUXA'
+};
+
+export const PlaceholderDevice = {
+    id: '@',
+    name: 'Placeholder',
+    tags: [{
+        id: '@',
+        name: '@',
+        device: '@'
+    }]
+};
 
 export class Device {
     /** Device id, GUID */
@@ -16,7 +29,7 @@ export class Device {
     /** Polling interval, check changed value after ask value, by OPCUA there is a monitor  */
     polling: number;
     /** Tags list of Tag */
-    tags: any;
+    tags: DictionaryTag;
 
     constructor(_id: string) {
         this.id = _id;
@@ -35,6 +48,10 @@ export class Device {
     static isWebApiProperty(device: Device): boolean {
         return device.type === DeviceType.WebAPI && device.property.getTags;
     }
+}
+
+interface DictionaryTag {
+    [id: string]: Tag;
 }
 
 export class Tag {
@@ -66,8 +83,20 @@ export class Tag {
     init: string;
     /** Value scaling properties */
     scale: TagScale;
+    /** Scale function to use when reading tag */
+    scaleReadFunction?: string;
+    /** Optional JSON encoded params and values for above script */
+    scaleReadParams?: string;
+    /** Scale function to use when writing tag */
+    scaleWriteFunction?: string;
+    /** Optional JSON encoded params and values for above script */
+    scaleWriteParams?: string;
     /** System Tag used in FUXA Server, example device status connection */
     sysType: TagSystemType;
+    /** Description */
+    description?: string;
+    /** Deadband to set changed value */
+    deadband?: TagDeadband;
 
     constructor(_id: string) {
         this.id = _id;
@@ -92,6 +121,11 @@ export class Tag {
     };
 }
 
+export interface TagDevice extends Tag {
+    deviceId?: string;
+    deviceName?: string;
+    deviceType?: DeviceType;
+}
 export class TagDaq {
     /** DAQ data acquisition is enabled */
     enabled: boolean;
@@ -108,6 +142,15 @@ export class TagDaq {
         this.interval = _interval;
         this.restored = _restored;
     }
+}
+
+export interface TagDeadband {
+    value: number;
+    mode: TagDeadbandModeType;
+}
+
+export enum TagDeadbandModeType {
+    absolute = 'absolute'
 }
 
 export class DeviceNetProperty {
@@ -137,6 +180,10 @@ export class DeviceNetProperty {
     format: string;
     /** Connection option used for Modbus RTU/TCP */
     connectionOption: string;
+    /** Delay used for Modbus RTU/TCP delay between frame*/
+    delay: number = 10;
+    /** Modbus TCP socket reuse flag */
+    socketReuse?: string;
 
     static descriptor = {
         address: 'Device address (IP)',
@@ -182,7 +229,8 @@ export enum DeviceType {
     WebAPI = 'WebAPI',
     MQTTclient = 'MQTTclient',
     internal = 'internal',
-    EthernetIP = 'EthernetIP'
+    EthernetIP = 'EthernetIP',
+    ODBC = 'ODBC'
     // Template: 'template'
 }
 
@@ -218,6 +266,24 @@ export enum ModbusTagType {
     // String = 'String'
 }
 
+export enum OpcUaTagType {
+    Boolean = 'Boolean',
+    SByte = 'SByte',
+    Byte = 'Byte',
+    Int16 = 'Int16',
+    UInt16 = 'UInt16',
+    Int32 = 'Int32',
+    UInt32 = 'UInt32',
+    Int64 = 'Int64',
+    UInt64 = 'UInt64',
+    Float = 'Float',
+    Double = 'Double',
+    String = 'String',
+    DateTime = 'DateTime',
+    Guid = 'Guid',
+    ByteString = 'ByteString'
+}
+
 export enum ModbusOptionType {
     SerialPort = 'SerialPort',
     RTUBufferedPort = 'RTUBufferedPort',
@@ -226,6 +292,11 @@ export enum ModbusOptionType {
     UdpPort = 'UdpPort',
     TcpRTUBufferedPort = 'TcpRTUBufferedPort',
     TelnetPort = 'TelnetPort'
+}
+
+export enum ModbusReuseModeType {
+    Reuse = 'Reuse',
+    ReuseSerial = 'ReuseSerial',
 }
 
 export enum MessageSecurityMode {

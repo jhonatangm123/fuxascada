@@ -5,11 +5,15 @@ import { TranslateService } from '@ngx-translate/core';
 import {
     GaugeEvent,
     GaugeEventActionType,
+    GaugeEventRelativeFromType,
     GaugeEventSetValueType,
     GaugeEventType,
     GaugeProperty,
     GaugeSettings,
-    View
+    View,
+    ViewEventActionType,
+    ViewEventType,
+    ViewType
 } from '../../../_models/hmi';
 import { Script, ScriptParam, SCRIPT_PARAMS_MAP } from '../../../_models/script';
 
@@ -31,34 +35,51 @@ export class FlexEventComponent implements OnInit {
     @Input() data: any;
     @Input() scripts: Script[];
 
-    variablesMapping = 'variablesMapping';
     eventRunScript = Utils.getEnumKey(GaugeEventActionType, GaugeEventActionType.onRunScript);
 
     events: GaugeEvent[];
-    eventType = {};
+    eventType = <GaugeEventType>{};
+
     setValueType = GaugeEventSetValueType;
     enterActionType = {};
-    actionType = GaugeEventActionType;
+    actionType: typeof GaugeEventActionType | typeof ViewEventActionType = GaugeEventActionType;
+    relativeFromType = GaugeEventRelativeFromType;
     eventActionOnCard = Utils.getEnumKey(GaugeEventActionType, GaugeEventActionType.onwindow);
     eventWithPosition = [Utils.getEnumKey(GaugeEventActionType, GaugeEventActionType.oncard),
                          Utils.getEnumKey(GaugeEventActionType, GaugeEventActionType.onwindow),
                          Utils.getEnumKey(GaugeEventActionType, GaugeEventActionType.oniframe)];
     cardDestination = Utils.getEnumKey(GaugeEventActionType, GaugeEventActionType.onwindow);
+    panelDestination = Utils.getEnumKey(GaugeEventActionType, GaugeEventActionType.onViewToPanel);
+    eventOnWindows = Utils.getEnumKey(GaugeEventActionType, GaugeEventActionType.oncard);
+    viewPanels: PanelData[];
 
-    constructor(private translateService: TranslateService) {
+    eventOnOpenTab = Utils.getEnumKey(GaugeEventActionType, GaugeEventActionType.onOpenTab);
+    eventOnIframe = Utils.getEnumKey(GaugeEventActionType, GaugeEventActionType.oniframe);
+
+    constructor(
+        private translateService: TranslateService) {
     }
 
     ngOnInit() {
-        if (this.data.settings.type === HtmlInputComponent.TypeTag) {
+
+        // Events for view
+        if (this.data?.type === ViewType.svg) {
+            this.actionType = ViewEventActionType;
+            this.eventType[Utils.getEnumKey(ViewEventType, ViewEventType.onopen)] = this.translateService.instant(ViewEventType.onopen);
+            this.eventType[Utils.getEnumKey(ViewEventType, ViewEventType.onclose)] = this.translateService.instant(ViewEventType.onclose);
+        } else if (this.data.settings?.type === HtmlInputComponent.TypeTag) {
             this.eventType[Utils.getEnumKey(GaugeEventType, GaugeEventType.enter)] = this.translateService.instant(GaugeEventType.enter);
-        } else if (this.data.settings.type === HtmlSelectComponent.TypeTag) {
+        } else if (this.data.settings?.type === HtmlSelectComponent.TypeTag) {
             this.eventType[Utils.getEnumKey(GaugeEventType, GaugeEventType.select)] = this.translateService.instant(GaugeEventType.select);
         } else {
             this.eventType[Utils.getEnumKey(GaugeEventType, GaugeEventType.click)] = this.translateService.instant(GaugeEventType.click);
+            this.eventType[Utils.getEnumKey(GaugeEventType, GaugeEventType.dblclick)] = this.translateService.instant(GaugeEventType.dblclick);
             this.eventType[Utils.getEnumKey(GaugeEventType, GaugeEventType.mousedown)] = this.translateService.instant(GaugeEventType.mousedown);
             this.eventType[Utils.getEnumKey(GaugeEventType, GaugeEventType.mouseup)] = this.translateService.instant(GaugeEventType.mouseup);
+            this.eventType[Utils.getEnumKey(GaugeEventType, GaugeEventType.mouseover)] = this.translateService.instant(GaugeEventType.mouseover);
+            this.eventType[Utils.getEnumKey(GaugeEventType, GaugeEventType.mouseout)] = this.translateService.instant(GaugeEventType.mouseout);
         }
-
+        this.viewPanels = <PanelData[]>Object.values(this.data.view?.items ?? [])?.filter((item: any) => item.type === 'svg-ext-own_ctrl-panel');//#issue on build  PanelComponent.TypeTag);
         this.enterActionType[Utils.getEnumKey(GaugeEventActionType, GaugeEventActionType.onRunScript)] = this.translateService.instant(GaugeEventActionType.onRunScript);
 
         Object.keys(this.actionType).forEach(key => {
@@ -74,7 +95,9 @@ export class FlexEventComponent implements OnInit {
             // compatibility with <= 1.0.4
             this.events.forEach(element => {
                 if (!element.actoptions || Object.keys(element.actoptions).length == 0) {
-                    element.actoptions = {variablesMapping: []};
+                    element.actoptions = {
+                        variablesMapping: []
+                    };
                 }
             });
         }
@@ -90,7 +113,7 @@ export class FlexEventComponent implements OnInit {
                 if (element.type) {
                     // clean unconfig
                     if (element.action === this.eventRunScript) {
-                        delete element.actoptions[this.variablesMapping];
+                        delete element.actoptions['variablesMapping'];
                     } else {
                         delete element.actoptions[SCRIPT_PARAMS_MAP];
                     }
@@ -125,42 +148,55 @@ export class FlexEventComponent implements OnInit {
         let b = Object.values(this.actionType).indexOf(GaugeEventActionType.onpage);
         let c = Object.values(this.actionType).indexOf(GaugeEventActionType.onwindow);
         let d = Object.values(this.actionType).indexOf(GaugeEventActionType.ondialog);
-        return a === b || a === c || a === d;
+        let e = Object.values(this.actionType).indexOf(GaugeEventActionType.onViewToPanel);
+        return a > -1 && (a === b || a === c || a === d || a === e);
     }
 
     withPosition(eventAction: GaugeEventActionType) {
         return this.eventWithPosition.indexOf(eventAction) !== -1;
     }
 
+    withWindows(eventAction: GaugeEventActionType) {
+        return eventAction !== this.eventOnOpenTab;
+    }
+
     withSetValue(action) {
         let a = Object.keys(this.actionType).indexOf(action);
         let b = Object.values(this.actionType).indexOf(GaugeEventActionType.onSetValue);
-        return a === b;
+        return a > -1 && (a === b);
     }
 
     withToggleValue(action) {
         let a = Object.keys(this.actionType).indexOf(action);
         let b = Object.values(this.actionType).indexOf(GaugeEventActionType.onToggleValue);
-        return a === b;
+        return a > -1 && (a === b);
     }
 
     withSetInput(action) {
         let a = Object.keys(this.actionType).indexOf(action);
         let b = Object.values(this.actionType).indexOf(GaugeEventActionType.onSetInput);
-        return a === b;
+        return a > -1 && (a === b);
     }
 
     withAddress(action) {
         let a = Object.keys(this.actionType).indexOf(action);
         let b = Object.values(this.actionType).indexOf(GaugeEventActionType.oniframe);
         let c = Object.values(this.actionType).indexOf(GaugeEventActionType.oncard);
-        return a === b || a === c;
+        let tab = Object.values(this.actionType).indexOf(GaugeEventActionType.onOpenTab);
+        return a > -1 && (a === b || a === c || a === tab);
+    }
+
+    withSize(action) {
+        let a = Object.keys(this.actionType).indexOf(action);
+        let b = Object.values(this.actionType).indexOf(GaugeEventActionType.oniframe);
+        let c = Object.values(this.actionType).indexOf(GaugeEventActionType.oncard);
+        return a > -1 && (a === b || a === c);
     }
 
     withScale(action) {
         let a = Object.keys(this.actionType).indexOf(action);
         let b = Object.values(this.actionType).indexOf(GaugeEventActionType.oniframe);
-        return a === b;
+        return a > -1 && (a === b);
     }
 
     withRunScript(action) {
@@ -169,7 +205,7 @@ export class FlexEventComponent implements OnInit {
 
     getView(viewId: any) {
         return this.views.find(function(item) {
-            return item.id == viewId;
+            return item.id === viewId;
         });
     }
 
@@ -186,10 +222,21 @@ export class FlexEventComponent implements OnInit {
         return type === 'enter' || type === 'select';
     }
 
+    isWithPanel(action) {
+        let a = Object.keys(this.actionType).indexOf(action);
+        let b = Object.values(this.actionType).indexOf(GaugeEventActionType.onViewToPanel);
+        return a === b;
+    }
+
     private addEvent(ge: GaugeEvent) {
         if (!this.events) {
             this.events = [];
         }
         this.events.push(ge);
     }
+}
+
+interface PanelData {
+    id: string;
+    name: string;
 }

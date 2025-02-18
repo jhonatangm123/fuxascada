@@ -2,7 +2,7 @@
 module.exports = {
     // Version to manage update
     version: 1.1,
-    
+
     // Standard language (editor)
     language: 'en',
 
@@ -13,17 +13,38 @@ module.exports = {
     // Default: '_logs'
     logDir: '_logs',
 
+    // logApiLevel Configuration for Morgan Logging
+    //
+    // This configuration determines the format of logging by Morgan, indirectly acting as a 'level' of logging detail.
+    // The setting influences which predefined format or custom function Morgan uses to log HTTP requests.
+    //
+    // Possible values for logApiLevel:
+    // - 'dev': Colorful and concise output for development environments, showing the method, URL, status, response length, and response time.
+    // - 'combined': Apache combined log format. Very detailed, suitable for production environments.
+    // - 'common': Less detailed than 'combined', omitting the referrer and user-agent.
+    // - 'short': Shorter format that includes the remote address and request details.
+    // - 'tiny': Minimalist format, showing just the method, URL, status, response length, and response time.
+    //
+    // Default Value:
+    // - 'combined': By default, logApiLevel is set to 'combined', providing detailed logs suitable for thorough tracking and analysis.
+    logApiLevel: 'tiny',
+
     // Used to storage Database like DAQ, User
-    // Default: '_db'    
+    // Default: '_db'
     dbDir: '_db',
 
     // DAQ Enabled
-    // Default: true    
+    // Default: true
     daqEnabled: true,
 
     // DAQ DB to Tokenizer the file and save in archive
     // Default: 24 Hours (1 Day), 0 is disabled only 1 DB file
     daqTokenizer: 24,
+
+    // Tags value to be broadcast,
+    // if false will be send to frontend only the tags bind to current visualized views
+    // if true all configured tags will be send to frontend
+    broadcastAll: false,
 
     // By default, server accepts connections on all IPv4 interfaces.
     // To listen on all IPv6 addresses, set uiHost to "::",
@@ -62,5 +83,5 @@ module.exports = {
 
     // Enable GPIO in Raspberry
     // To enable only by Raspberry Host
-    
+
 }

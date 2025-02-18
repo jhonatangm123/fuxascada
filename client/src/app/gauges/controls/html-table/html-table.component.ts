@@ -4,6 +4,8 @@ import { GaugeSettings, Variable, GaugeStatus, TableType, TableOptions, TableCel
 import { Utils } from '../../../_helpers/utils';
 import { GaugeDialogType } from '../../gauge-property/gauge-property.component';
 import { DataTableComponent } from './data-table/data-table.component';
+import { AlarmsFilter } from '../../../_models/alarm';
+import { ReportsFilter } from '../../../_models/report';
 
 @Injectable()
 export class HtmlTableComponent {
@@ -12,7 +14,7 @@ export class HtmlTableComponent {
     static prefixD = 'D-OXC_';
 
     static getSignals(pro: ITableProperty): string[] {
-        if (pro.type === TableType.data && pro.options && pro.options.rows) {
+        if (pro.type === TableType.data && pro.options?.rows) {
             let signalIds = [];
             pro.options.rows.forEach(row => {
                 row.cells.forEach(cell => {
@@ -20,6 +22,14 @@ export class HtmlTableComponent {
                         signalIds.push(cell.variableId);
                     }
                 });
+            });
+            return signalIds;
+        } else if (pro.options?.realtime) {
+            let signalIds = [];
+            pro.options.columns?.forEach(col => {
+                if (col.variableId && col.type === TableCellType.variable) {
+                        signalIds.push(col.variableId);
+                }
             });
             return signalIds;
         }
@@ -41,6 +51,7 @@ export class HtmlTableComponent {
     static initElement(gab: GaugeSettings, resolver: ComponentFactoryResolver, viewContainerRef: ViewContainerRef, isview: boolean): DataTableComponent {
         let ele = document.getElementById(gab.id);
         if (ele) {
+            ele?.setAttribute('data-name', gab.name);
             let htmlTable = Utils.searchTreeStartWith(ele, this.prefixD);
             if (htmlTable) {
                 let factory = resolver.resolveComponentFactory(DataTableComponent);
@@ -49,7 +60,12 @@ export class HtmlTableComponent {
                 //     componentRef.instance.withToolbar = (gab.property.type === 'history') ? true : false;
                 // }
                 if (!gab.property) {
-                    gab.property = <GaugeTableProperty>{ id: null, type: TableType.data, options: DataTableComponent.DefaultOptions() };
+                    gab.property = <GaugeTableProperty>{
+                        id: null,
+                        type: TableType.data,
+                        options: DataTableComponent.DefaultOptions(),
+                        events: []
+                    };
                 }
                 htmlTable.innerHTML = '';
                 (<DataTableComponent>componentRef.instance).isEditor = !isview;
@@ -57,7 +73,23 @@ export class HtmlTableComponent {
                 // componentRef.instance.rangeType = chartRange;
                 (<DataTableComponent>componentRef.instance).id = gab.id;
                 (<DataTableComponent>componentRef.instance).type = gab.property.type;
-
+                (<DataTableComponent>componentRef.instance).events = gab.property.events;
+                (<DataTableComponent>componentRef.instance).dataFilter = null;
+                if (gab.property.type === TableType.alarms && gab.property.options?.alarmFilter) {
+                    const dataFilter = <AlarmsFilter> {
+                        priority: gab.property.options?.alarmFilter?.filterA,
+                        text: gab.property.options?.alarmFilter?.filterB[0],
+                        group: gab.property.options?.alarmFilter?.filterB[1],
+                        tagIds: gab.property.options?.alarmFilter?.filterC
+                    };
+                    (<DataTableComponent>componentRef.instance).dataFilter = dataFilter;
+                } else if (gab.property.type === TableType.reports && gab.property.options?.reportFilter) {
+                    const dataFilter = <ReportsFilter> {
+                        name: gab.property.options?.reportFilter?.filterA[0],
+                        count: gab.property.options?.reportFilter?.filterA[1],
+                    };
+                    (<DataTableComponent>componentRef.instance).dataFilter = dataFilter;
+                }
                 componentRef.changeDetectorRef.detectChanges();
                 htmlTable.appendChild(componentRef.location.nativeElement);
                 // let opt = <GraphOptions>{ panel: { height: htmlGraph.clientHeight, width: htmlGraph.clientWidth } };
@@ -65,6 +97,7 @@ export class HtmlTableComponent {
                 // componentRef.instance.setOptions(opt);
 
                 componentRef.instance['myComRef'] = componentRef;
+                componentRef.instance['name'] = gab.name;
                 return componentRef.instance;
             }
         }

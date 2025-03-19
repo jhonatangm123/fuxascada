@@ -101,7 +101,7 @@ $my-slider-theme: mat.define-light-theme((
 @include mat.slider-theme($my-slider-theme);
 
 // Define a dark theme
-$dark-primary: mat.define-palette(mat.$blue-palette);
+$dark-primary: mat.define-palette(mat.$black-palette);
 $dark-accent: mat.define-palette(mat.$amber-palette, A200, A100, A400);
 $dark-warn: mat.define-palette(mat.$deep-orange-palette);
 $dark-theme: mat.define-dark-theme((

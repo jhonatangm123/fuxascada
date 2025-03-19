@@ -125,7 +125,7 @@ body {
     margin: 0px;
     font-family: "Segoe UI Symbol", "Roboto-Regular", "Helvetica Neue", sans-serif;
     font-weight: 300;
-    background-color: white;
+    background-color: black;
 }
 
 /* Read-only select gauge is "disabled". Make sure browser does not "dim" it */

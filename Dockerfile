@@ -5,7 +5,7 @@ ARG NODE_SNAP=false
 RUN apt-get update && apt-get install -y dos2unix
 
 # Change working directory
-WORKDIR /usr/src/app
+WORKDIR /usr/src/app/fuxascada
 
 # Clone FUXA repository
 
@@ -21,7 +21,7 @@ WORKDIR /usr/src/app/fuxascada/odbc
 RUN ./install_odbc_drivers.sh
 
 # Change working directory
-WORKDIR /usr/src/app
+WORKDIR /usr/src/app/fuxascada
 
 # Copy odbcinst.ini to /etc
 RUN cp fuxascada/odbc/odbcinst.ini /etc/odbcinst.ini

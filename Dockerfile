@@ -5,7 +5,7 @@ ARG NODE_SNAP=false
 RUN apt-get update && apt-get install -y dos2unix
 
 # Change working directory
-WORKDIR /usr/src/app/fuxascada
+WORKDIR /usr/src/app
 
 # Clone FUXA repository
 

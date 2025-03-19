@@ -2,40 +2,53 @@ FROM node:18-bookworm
 
 ARG NODE_SNAP=false
 
-# Instalar dependencias necesarias en un solo paso
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential unixodbc unixodbc-dev sqlite3 libsqlite3-dev git && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y dos2unix
 
-# Crear usuario no root
-RUN useradd -m appuser
-
-# Establecer directorio de trabajo
+# Change working directory
 WORKDIR /usr/src/app
 
-# Clonar siempre la última versión del repositorio de GitHub
-RUN git clone https://github.com/jhonatangm123/fuxascada.git && \
-    cd fuxascada/odbc && \
-    chmod +x install_odbc_drivers.sh && \
-    ./install_odbc_drivers.sh && \
-    cp odbcinst.ini /etc/odbcinst.ini
+# Clone FUXA repository
+RUN git clone https://github.com/jhonatangm123/fuxascada.git
 
-# Instalar dependencias del servidor FUXA SCADA
+# Install build dependencies for node-odbc
+RUN apt-get update && apt-get install -y build-essential unixodbc unixodbc-dev
+
+# Convert the script to Unix format and make it executable
+RUN dos2unix fuxascada/odbc/install_odbc_drivers.sh && chmod +x fuxascada/odbc/install_odbc_drivers.sh
+
+WORKDIR /usr/src/app/fuxascada/odbc
+RUN ./install_odbc_drivers.sh
+
+# Change working directory
+WORKDIR /usr/src/app
+
+# Copy odbcinst.ini to /etc
+RUN cp fuxascada/odbc/odbcinst.ini /etc/odbcinst.ini
+
+# Install FUXA server
 WORKDIR /usr/src/app/fuxascada/server
-RUN npm install --omit=dev
+RUN npm install
 
-# Instalar opcionalmente node-snap7 si NODE_SNAP=true
-RUN if [ "$NODE_SNAP" = "true" ]; then npm install node-snap7; fi
+# Install options snap7
+RUN if [ "$NODE_SNAP" = "true" ]; then \
+    npm install node-snap7; \
+    fi
 
-# Workaround para SQLite3
-RUN npm install --build-from-source --sqlite=/usr/bin sqlite3
+# Workaround for sqlite3 https://stackoverflow.com/questions/71894884/sqlite3-err-dlopen-failed-version-glibc-2-29-not-found
+RUN apt-get update && apt-get install -y sqlite3 libsqlite3-dev && \
+    apt-get autoremove -yqq --purge && \
+    apt-get clean  && \
+    rm -rf /var/lib/apt/lists/*  && \
+    npm install --build-from-source --sqlite=/usr/bin sqlite3
 
-# Cambiar permisos y asignar usuario no root
-RUN chown -R appuser:appuser /usr/src/app
-USER appuser
+# Add project files
+ADD . /usr/src/app/fuxascada
 
-# Exponer puerto
+# Set working directory
+WORKDIR /usr/src/app/fuxascada/server
+
+# Expose port
 EXPOSE 1881
 
-# Iniciar el servidor
-CMD ["npm", "start"]
+# Start the server
+CMD [ "npm", "start" ]

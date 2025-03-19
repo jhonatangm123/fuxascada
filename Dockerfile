@@ -8,25 +8,25 @@ RUN apt-get update && apt-get install -y dos2unix
 WORKDIR /usr/src/app
 
 # Clone FUXA repository
-RUN git clone https://github.com/jhonatangm123/fuxascada.git
+RUN git clone https://github.com/frangoteam/FUXA.git
 
 # Install build dependencies for node-odbc
 RUN apt-get update && apt-get install -y build-essential unixodbc unixodbc-dev
 
 # Convert the script to Unix format and make it executable
-RUN dos2unix fuxascada/odbc/install_odbc_drivers.sh && chmod +x fuxascada/odbc/install_odbc_drivers.sh
+RUN dos2unix FUXA/odbc/install_odbc_drivers.sh && chmod +x FUXA/odbc/install_odbc_drivers.sh
 
-WORKDIR /usr/src/app/fuxascada/odbc
+WORKDIR /usr/src/app/FUXA/odbc
 RUN ./install_odbc_drivers.sh
 
 # Change working directory
 WORKDIR /usr/src/app
 
 # Copy odbcinst.ini to /etc
-RUN cp fuxascada/odbc/odbcinst.ini /etc/odbcinst.ini
+RUN cp FUXA/odbc/odbcinst.ini /etc/odbcinst.ini
 
-# Install FUXA server
-WORKDIR /usr/src/app/fuxascada/server
+# Install Fuxa server
+WORKDIR /usr/src/app/FUXA/server
 RUN npm install
 
 # Install options snap7
@@ -42,10 +42,10 @@ RUN apt-get update && apt-get install -y sqlite3 libsqlite3-dev && \
     npm install --build-from-source --sqlite=/usr/bin sqlite3
 
 # Add project files
-ADD . /usr/src/app/fuxascada
+ADD . /usr/src/app/FUXA
 
 # Set working directory
-WORKDIR /usr/src/app/fuxascada/server
+WORKDIR /usr/src/app/FUXA/server
 
 # Expose port
 EXPOSE 1881

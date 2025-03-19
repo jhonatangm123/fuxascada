@@ -21,7 +21,7 @@ WORKDIR /usr/src/app/fuxascada/odbc
 RUN ./install_odbc_drivers.sh
 
 # Change working directory
-WORKDIR /usr/src/app/fuxascada
+WORKDIR /usr/src/app
 
 # Copy odbcinst.ini to /etc
 RUN cp fuxascada/odbc/odbcinst.ini /etc/odbcinst.ini
